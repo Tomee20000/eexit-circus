@@ -11,24 +11,15 @@ autoload_module.update_files = [
     "autoexec.be",
     "preinit.be",
     "autoload.be",
-    "autoexec/embassy1.be",
-    "autoexec/embassy2.be",
-    "autoexec/radio1.be",
-    "autoexec/radio2.be",
-    "autoexec/suitcase1.be",
-    "autoexec/suitcase2.be",
-    "autoexec/projector1.be",
+#    "autoexec/embassy1.be",
 ]
 
 autoload_module.lib_files = [
-    "lib/LibMultiplexer.be",
-    "lib/LibRotaryEncoder.be",
-    "lib/LibAsyncMotorDriver.be",
-    "lib/LibAsyncMotorManager.be",
-]
+#    "lib/LibMultiplexer.be",
+]*/
 
 
-autoload_module.fetch_url = "https://raw.githubusercontent.com/hasomerhacairhu/irathamisito-kalandjatek/refs/heads/main/tasmota/"
+autoload_module.fetch_url = "https://raw.githubusercontent.com/Tomee20000/eexit-circus/refs/heads/main/tasmota/"
 
 autoload_module.init = def ()
     tasmota.add_cmd("UpdateScripts", autoload_module.update_scripts)
