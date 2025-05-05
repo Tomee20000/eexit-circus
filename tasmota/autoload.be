@@ -11,12 +11,12 @@ autoload_module.update_files = [
     "autoexec.be",
     "preinit.be",
     "autoload.be",
-#    "autoexec/embassy1.be",
+    "autoexec/clawmachine.be",
 ]
 
 autoload_module.lib_files = [
 #    "lib/LibMultiplexer.be",
-]*/
+]
 
 
 autoload_module.fetch_url = "https://raw.githubusercontent.com/Tomee20000/eexit-circus/refs/heads/main/tasmota/"
