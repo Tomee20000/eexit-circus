@@ -2,11 +2,11 @@
 
 #led mux
 
-var PIN_MUX_ADDR_0 = 
-var PIN_MUX_ADDR_1 = 
-var PIN_MUX_ADDR_2 = 
-var PIN_MUX_ADDR_3 = 
-var PIN_MUX_COM = 
+var PIN_MUX_ADDR_0 = 15
+var PIN_MUX_ADDR_1 = 14
+var PIN_MUX_ADDR_2 = 12
+var PIN_MUX_ADDR_3 = 13
+var PIN_MUX_COM = 33
 
 var topic = tasmota.cmd("Topic")["Topic"]
 
