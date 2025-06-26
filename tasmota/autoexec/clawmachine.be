@@ -1,23 +1,23 @@
 #TODO SwitchMode0 1
 #TODO coin érzékelés
 
-var MOTOR_LR1 = 0
-var MOTOR_LR2 = 1
-var MOTOR_FB1 = 2
-var MOTOR_FB2 = 3
-var MOTOR_CLAW1 = 4
-var MOTOR_CLAW2 = 5
-var CLAW = 6
+var MOTOR_LR1 = 23
+var MOTOR_LR2 = 22
+var MOTOR_FB1 = 21
+var MOTOR_FB2 = 19
+var MOTOR_CLAW1 = 5
+var MOTOR_CLAW2 = 2
+var CLAW = 12
 
-var JOY_L = 21
-var JOY_R = 22
-var JOY_F = 23
-var JOY_B = 25
-var JOY_BUTTON = 26
+var JOY_L = 34
+var JOY_R = 35
+var JOY_F = 32
+var JOY_B = 33
+var JOY_BUTTON = 25
 
-var ENDSTOP_L = 27
-var ENDSTOP_F = 32
-var ENDSTOP_CLAW = 33
+var ENDSTOP_L = 26
+var ENDSTOP_F = 27
+var ENDSTOP_CLAW = 14 
 
 var in_claw_animation = false
 var is_full_left = false
@@ -172,7 +172,7 @@ class ClawMachineDriver
         end
 
         #left endstop
-        if gpio.digital_read(ENDSTOP_L)
+        if gpio.digital_read(ENDSTOP_L) && is_full_left && motor_lr_state == 1
             print("full left")
             is_full_left = true
             motor_lr_state = 0
@@ -185,7 +185,7 @@ class ClawMachineDriver
         end
 
         #front endstop
-        if gpio.digital_read(ENDSTOP_F)
+        if gpio.digital_read(ENDSTOP_F) && is_full_front && motor_fb_state == 1
             print("full front")
             is_full_front = true
             motor_fb_state = 0

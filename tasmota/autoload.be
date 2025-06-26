@@ -12,10 +12,11 @@ autoload_module.update_files = [
     "preinit.be",
     "autoload.be",
     "autoexec/clawmachine.be",
+    "autoexec/animalwheel.be",
 ]
 
 autoload_module.lib_files = [
-#    "lib/LibMultiplexer.be",
+    "lib/LibMultiplexer.be",
 ]
 
 
