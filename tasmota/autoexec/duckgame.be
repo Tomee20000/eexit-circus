@@ -1,5 +1,5 @@
 #
-# duck_game.be — Berry script Tasmota ESP32-n
+# duck_game.be — Berry script Tasmota ESP32-n, indítás parancsra (nem “mqtt.on”)
 #
 
 # Globális változók
@@ -7,9 +7,9 @@ var cycle_count = 0
 var going_up = true
 var max_cycles = 10
 
-# --- Inicializálás indításkor ---
+# --- Inicializálás indításkor (betöltéskor) ---
 def init()
-    # Alapkonfigurációk
+    # Alapkonfigurációk, mindig beállítjuk indításkor
     send("SetOption80 1")
     send("Shuttermode 5")
     send("PWMfrequency 200")
@@ -20,25 +20,35 @@ def init()
     send("ShutterCloseDuration1 1")
     send("ShutterMotorDelay1 0.2")
 
-    # Regisztráljuk, hogy reagáljunk a belső redőny eseményekre
-    # „shutter#position” esemény: minden pozícióváltozásnál fut
+    # Regisztráljuk eseménykezelőre a belső pozícióváltozás eseményt
     event.on("shutter1#position", on_position_change)
-    # (lehet használni shutter1#moved is, hogy a mozgás végén reagálj)
-    event.on("shutter1#moved", on_movement_end)
+
+    # Regisztráljuk a custom parancsot: “DUCKSTART”
+    # amikor kiadod console-ból: DUCKSTART
+    # akkor meghívódik a funkció start_game()
+    tasmota.add_cmd("DUCKSTART", start_game)
+end
+
+# --- A parancs hatására elindul (nem MQTT callback) ---
+def start_game(args)
+    # („args” lehet parancs argumentum, itt nem használjuk)
+    cycle_count = 0
+    going_up = true
+    # Indító mozgás
+    send("ShutterPosition1 100")
 end
 
 # --- Callback: pozícióváltozás történt ---
 def on_position_change(pos)
-    # pos értéke szám (0..100)
+    # pos értéke 0..100 (szám)
     var p = pos
-    # Ha most felfelé megyünk és elértük vagy meghaladtuk 100-at
+    # Ha felfelé tartunk, és elértük vagy meghaladtuk 100-at
     if going_up and p >= 100
-        # Azonnal parancs visszafelé
         send("ShutterPosition1 40")
         going_up = false
         cycle_count = cycle_count + 1
     end
-    # Ha visszafelé megyünk és elértük vagy alá mentünk 40-es szintet
+    # Ha visszafelé tartunk és elértük vagy alá mentünk 40-es szintet
     if (not going_up) and p <= 40
         if cycle_count < max_cycles
             send("ShutterPosition1 100")
@@ -47,27 +57,5 @@ def on_position_change(pos)
     end
 end
 
-# --- Callback: mozgás befejeződött (elmozdulás vége) ---
-def on_movement_end()
-    # Lehet használni ha akarsz valamit a mozgás végén, de nem kötelező
-    # (Pl. kikapcsolod a PWM-et, ha nem akarod, hogy “tartsa”)
-    # Itt nincs szükség feltétlenül semmire
-    nil
-end
-
-# --- MQTT üzenet kezelése (csak a START parancs) ---
-def on_mqtt(topic, payload)
-    # Feltételezzük, hogy a START üzenet topicja pl. „cmnd/tasmota_A503DC/START” vagy amit beállítottál
-    if payload == "START"
-        # indítsuk el az első mozgást
-        send("ShutterPosition1 100")
-        going_up = true
-        cycle_count = 0
-    end
-end
-
-# Esemény regisztráció indításkor
-mqtt.on("cmnd/tasmota_A503DC/START", on_mqtt)
-
-# Amikor a script elindul, hívjuk meg az initet
+# --- Betöltéskor futtatjuk az initet ---
 init()
