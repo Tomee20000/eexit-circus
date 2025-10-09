@@ -13,14 +13,15 @@ autoload_module.update_files = [
     "autoload.be",
     "autoexec/clawmachine.be",
     "autoexec/animalwheel.be",
+    "autoexec/duckgame.be",
 ]
 
-autoload_module.lib_files = [
-    "lib/LibMultiplexer.be",
-]
+#autoload_module.lib_files = [
+#    "/lib/LibMultiplexer.be",
+#]
 
 
-autoload_module.fetch_url = "https://github.com/Tomee20000/eexit-circus/tree/6ca368e6a5c1ec64ad5e4719cbf59783d89aeb75/tasmota/"
+autoload_module.fetch_url = "https://raw.githubusercontent.com/Tomee20000/eexit-circus/refs/heads/main/tasmota/"
 
 autoload_module.init = def ()
     tasmota.add_cmd("UpdateScripts", autoload_module.update_scripts)
