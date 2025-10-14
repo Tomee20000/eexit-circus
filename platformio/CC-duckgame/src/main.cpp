@@ -23,6 +23,8 @@ int servo3Pos = 0;
 int servo4Pos = 0;  
 int directionChanger = 1;
 
+string serialMessage = "";
+
 bool initNeeded = true;
 bool animationStarted = false;
 bool servo1Shotdown = false;
@@ -39,11 +41,11 @@ void servoInit();
 void readSerial();
 void servoPos(int servoNumber, double pos);
 void shootDown(int servoNumber);
+void(* resetFunc) (void) = 0;
  
 void setup() {
 	Serial.begin(115200);
-	Serial.println("ESP32 is ready. Please enter a message:");
-
+	
 	// Allow allocation of all timers
 	ESP32PWM::allocateTimer(0);
 	ESP32PWM::allocateTimer(1);
@@ -59,6 +61,9 @@ void setup() {
 	servo2.attach(servoPin2, 544, 2500);
 	servo3.attach(servoPin3, 544, 2500);
 	servo4.attach(servoPin4, 544, 2500);
+
+	servoInit();
+	Serial.println("Esp32 circus duckgame driver setup complete.");
 }
  
 void loop() {
@@ -148,7 +153,10 @@ void readSerial(){
 		char incomingChar = Serial.read();  // Read each character from the buffer
 		
 		if (incomingChar == '\n') {  // Check if the user pressed Enter (new line character)
+			serialMessage = "Command:" + receivedMessage;
+			Serial.println(serialMessage.c_str());
 			if (receivedMessage == "start"){
+				Serial.println("Animation start");
 				servoInit();
 				delay(servoStop * 5);
 				animationStarted = true;
@@ -156,15 +164,25 @@ void readSerial(){
 			else if (receivedMessage == "init"){
 				animationStarted = false;
 				servoInit();
+				Serial.println("Servos are initialized");
+			}
+			else if (receivedMessage == "restart"){
+				Serial.println("Restarting");
+				resetFunc();
 			}
 			else if (receivedMessage == "stop"){
 				animationStarted = false;
+				Serial.println("Servos are stopped");
 			}
 			else if (receivedMessage.substr(0,3) == "pos"){
-				servoPos(stoi(receivedMessage.substr(3,1)),stod(receivedMessage.substr(5,3)));	
+				servoPos(stoi(receivedMessage.substr(3,1)),stod(receivedMessage.substr(5,3)));
+				serialMessage = "Servo" + receivedMessage.substr(3,1) + " set to position:" + receivedMessage.substr(5,3);
+				Serial.println(serialMessage.c_str());	
 			}
 			else if (receivedMessage.substr(0,5) == "shoot"){
 				shootDown(stoi(receivedMessage.substr(5,1)));
+				serialMessage = "Servo" + receivedMessage.substr(5,1) + " shot down" ;
+				Serial.println(serialMessage.c_str());
 			}
 
 			return;
