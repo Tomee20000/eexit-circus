@@ -8,7 +8,6 @@ using namespace std;
 #define servoPin4 26
 #define startPos 180 //down
 #define endPos 60 //up
-#define servoStop 200 //stop at peak
 
 // create servo object to control a servo
 Servo servo1;
@@ -22,8 +21,12 @@ int servo2Pos = 0;
 int servo3Pos = 0;
 int servo4Pos = 0;  
 int directionChanger = 1;
+int servoStop = 200; //stop at peak
+int servoSpeed = 7; //delay time between steps
 
 string serialMessage = "";
+string receivedMessage = "";
+char incomingChar;
 
 bool initNeeded = true;
 bool animationStarted = false;
@@ -32,9 +35,6 @@ bool servo2Shotdown = false;
 bool servo3Shotdown = false;
 bool servo4Shotdown = false;
 
-//delay time between steps
-int servoSpeed = 7;
-
 void servoAnimation();
 void servoAnimationInit();
 void servoInit();
@@ -42,8 +42,11 @@ void readSerial();
 void servoPos(int servoNumber, double pos);
 void shootDown(int servoNumber);
 void(* resetFunc) (void) = 0;
+
+HardwareSerial CommandSerial(1);
  
 void setup() {
+	CommandSerial.begin(9600, SERIAL_8N1, 16, 17);
 	Serial.begin(115200);
 	
 	// Allow allocation of all timers
@@ -147,14 +150,13 @@ void servoAnimation(){
 }
 
 void readSerial(){
-	string receivedMessage = "";
-
-	while (Serial.available()) {
-		char incomingChar = Serial.read();  // Read each character from the buffer
+	while (CommandSerial.available()) {
+		incomingChar = CommandSerial.read();  // Read each character from the buffer	
 		
 		if (incomingChar == '\n') {  // Check if the user pressed Enter (new line character)
 			serialMessage = "Command:" + receivedMessage;
 			Serial.println(serialMessage.c_str());
+
 			if (receivedMessage == "start"){
 				Serial.println("Animation start");
 				servoInit();
@@ -184,9 +186,21 @@ void readSerial(){
 				serialMessage = "Servo" + receivedMessage.substr(5,1) + " shot down" ;
 				Serial.println(serialMessage.c_str());
 			}
+			else if (receivedMessage.substr(0,13) == "servostoptime"){
+				servoStop = stoi(receivedMessage.substr(13,4));
+				serialMessage = "Servo stop time:" + receivedMessage.substr(13,4);
+				Serial.println(serialMessage.c_str());
+			}
+			else if (receivedMessage.substr(0,5) == "speed"){
+				servoSpeed = stoi(receivedMessage.substr(6,2));
+				serialMessage = "Servo speed:" + receivedMessage.substr(6,2);
+				Serial.println(serialMessage.c_str());
+			}
+
+			receivedMessage = "";
 
 			return;
-		} 
+		}
 		else {
 			receivedMessage += incomingChar; // Append the character to the message string
 		}
