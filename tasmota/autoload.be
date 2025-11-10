@@ -12,7 +12,7 @@ autoload_module.update_files = [
     "preinit.be",
     "autoload.be",
     "autoexec/clawmachine.be",
-    "autoexec/cashmachine.be",
+    "autoexec/cashregister.be",
     "autoexec/animalwheel.be",
     "autoexec/duckgame.be",
 ]
