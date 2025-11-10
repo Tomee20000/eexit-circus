@@ -34,13 +34,13 @@ var motor_lr_state = 0
 var motor_fb_state = 0
 var motor_claw_state = 0
 
-tasmota.set_power(MOTOR_LR1, false)
-tasmota.set_power(MOTOR_LR2, false)
-tasmota.set_power(MOTOR_FB1, false)
-tasmota.set_power(MOTOR_FB2, false)
-tasmota.set_power(MOTOR_CLAW1, false)
-tasmota.set_power(MOTOR_CLAW2, false)
-tasmota.set_power(CLAW, false)
+gpio.digital_write(MOTOR_LR1, false)
+gpio.digital_write(MOTOR_LR2, false)
+gpio.digital_write(MOTOR_FB1, false)
+gpio.digital_write(MOTOR_FB2, false)
+gpio.digital_write(MOTOR_CLAW1, false)
+gpio.digital_write(MOTOR_CLAW2, false)
+gpio.digital_write(CLAW, false)
 
 def clawmachine_init()
     in_claw_animation = false
@@ -48,13 +48,13 @@ def clawmachine_init()
     is_full_front = false
     is_coin_inserted = false
 
-    tasmota.set_power(MOTOR_LR1, false)
-    tasmota.set_power(MOTOR_LR2, false)
-    tasmota.set_power(MOTOR_FB1, false)
-    tasmota.set_power(MOTOR_FB2, false)
-    tasmota.set_power(MOTOR_CLAW1, false)
-    tasmota.set_power(MOTOR_CLAW2, false)
-    tasmota.set_power(CLAW, false)
+    gpio.digital_write(MOTOR_LR1, false)
+    gpio.digital_write(MOTOR_LR2, false)
+    gpio.digital_write(MOTOR_FB1, false)
+    gpio.digital_write(MOTOR_FB2, false)
+    gpio.digital_write(MOTOR_CLAW1, false)
+    gpio.digital_write(MOTOR_CLAW2, false)
+    gpio.digital_write(CLAW, false)
 
     tasmota.resp_cmnd("Clawmachine init")
 end
@@ -67,19 +67,19 @@ end
 def clawStopAndGrip()
     print("claw stop down")
     motor_claw_state = 0
-    tasmota.set_power(MOTOR_CLAW1, false)
-    tasmota.set_power(MOTOR_CLAW2, false)
+    gpio.digital_write(MOTOR_CLAW1, false)
+    gpio.digital_write(MOTOR_CLAW2, false)
 
     # claw grips
     print("claw grip")
-    tasmota.set_power(CLAW, true)
+    gpio.digital_write(CLAW, true)
 end
 
 def clawUp()
     print("claw up")
     motor_claw_state = 2
-    tasmota.set_power(MOTOR_CLAW1, true)
-    tasmota.set_power(MOTOR_CLAW2, false)
+    gpio.digital_write(MOTOR_CLAW1, true)
+    gpio.digital_write(MOTOR_CLAW2, false)
 end
 
 tasmota.add_cmd("ClawMachineInit", clawmachine_init)
@@ -93,55 +93,55 @@ class ClawMachineDriver
             if gpio.digital_read(JOY_L) && motor_lr_state != 1 
                 print("left")
                 motor_lr_state = 1
-                tasmota.set_power(MOTOR_LR1, true)
-                tasmota.set_power(MOTOR_LR2, false)
+                gpio.digital_write(MOTOR_LR1, true)
+                gpio.digital_write(MOTOR_LR2, false)
             #right
             elif gpio.digital_read(JOY_R)  && motor_lr_state != 2
                 print("right")
                 motor_lr_state = 2
-                tasmota.set_power(MOTOR_LR1, false)
-                tasmota.set_power(MOTOR_LR2, true)
+                gpio.digital_write(MOTOR_LR1, false)
+                gpio.digital_write(MOTOR_LR2, true)
             #lrstop
             elif !gpio.digital_read(JOY_L) && !gpio.digital_read(JOY_R) && motor_lr_state != 0
                 print("lrstop")
                 motor_lr_state = 0
-                tasmota.set_power(MOTOR_LR1, false)
-                tasmota.set_power(MOTOR_LR2, false)
+                gpio.digital_write(MOTOR_LR1, false)
+                gpio.digital_write(MOTOR_LR2, false)
             #forward
             elif gpio.digital_read(JOY_F) && motor_fb_state != 1 
                 print("forward")
                 motor_fb_state = 1
-                tasmota.set_power(MOTOR_FB1, true)
-                tasmota.set_power(MOTOR_FB2, false)
+                gpio.digital_write(MOTOR_FB1, true)
+                gpio.digital_write(MOTOR_FB2, false)
             #backwards
             elif gpio.digital_read(JOY_B) && motor_fb_state != 2
                 print("backwards")
                 motor_fb_state = 2
-                tasmota.set_power(MOTOR_FB1, false)
-                tasmota.set_power(MOTOR_FB2, true)
+                gpio.digital_write(MOTOR_FB1, false)
+                gpio.digital_write(MOTOR_FB2, true)
             #fbstop
             elif !gpio.digital_read(JOY_F) && !gpio.digital_read(JOY_B) && motor_fb_state != 0
                 print("fbstop")
                 motor_fb_state = 0
-                tasmota.set_power(MOTOR_FB1, false)
-                tasmota.set_power(MOTOR_FB2, false)
+                gpio.digital_write(MOTOR_FB1, false)
+                gpio.digital_write(MOTOR_FB2, false)
             #claw
             elif gpio.digital_read(JOY_BUTTON)
                 print("claw animation started")
                 in_claw_animation = true
 
                 # motors stop and claw opens if wasn't
-                tasmota.set_power(MOTOR_LR1, false)
-                tasmota.set_power(MOTOR_LR2, false)
-                tasmota.set_power(MOTOR_FB1, false)
-                tasmota.set_power(MOTOR_FB2, false)
-                tasmota.set_power(CLAW, false)
+                gpio.digital_write(MOTOR_LR1, false)
+                gpio.digital_write(MOTOR_LR2, false)
+                gpio.digital_write(MOTOR_FB1, false)
+                gpio.digital_write(MOTOR_FB2, false)
+                gpio.digital_write(CLAW, false)
 
                 # claw goes down
                 print("claw down")
                 motor_claw_state = 1
-                tasmota.set_power(MOTOR_CLAW1, false)
-                tasmota.set_power(MOTOR_CLAW2, true)
+                gpio.digital_write(MOTOR_CLAW1, false)
+                gpio.digital_write(MOTOR_CLAW2, true)
                 
                 # after 3 sec claw stops
                 tasmota.set_timer(3000,clawStopAndGrip)
@@ -157,18 +157,18 @@ class ClawMachineDriver
             
             #claw stops
             motor_claw_state = 0
-            tasmota.set_power(MOTOR_CLAW1, false)
-            tasmota.set_power(MOTOR_CLAW2, false)
+            gpio.digital_write(MOTOR_CLAW1, false)
+            gpio.digital_write(MOTOR_CLAW2, false)
 
             #goes over the hole
             print("claw goes to the hole")
             motor_lr_state = 1
-            tasmota.set_power(MOTOR_LR1, true)
-            tasmota.set_power(MOTOR_LR2, false)
+            gpio.digital_write(MOTOR_LR1, true)
+            gpio.digital_write(MOTOR_LR2, false)
 
             motor_fb_state = 2
-            tasmota.set_power(MOTOR_FB1, false)
-            tasmota.set_power(MOTOR_FB2, true)
+            gpio.digital_write(MOTOR_FB1, false)
+            gpio.digital_write(MOTOR_FB2, true)
         end
 
         #left endstop
@@ -178,8 +178,8 @@ class ClawMachineDriver
             motor_lr_state = 0
 
             # left stop
-            tasmota.set_power(MOTOR_LR1, false)
-            tasmota.set_power(MOTOR_LR2, false)
+            gpio.digital_write(MOTOR_LR1, false)
+            gpio.digital_write(MOTOR_LR2, false)
         else
             is_full_left = false
         end
@@ -191,8 +191,8 @@ class ClawMachineDriver
             motor_fb_state = 0
 
             # front stop
-            tasmota.set_power(MOTOR_FB1, false)
-            tasmota.set_power(MOTOR_FB2, false)
+            gpio.digital_write(MOTOR_FB1, false)
+            gpio.digital_write(MOTOR_FB2, false)
         else
             is_full_front = false
         end
@@ -202,11 +202,11 @@ class ClawMachineDriver
 
             print("claw over dropping hole")
             # motor stops, claw opens
-            tasmota.set_power(MOTOR_LR1, false)
-            tasmota.set_power(MOTOR_LR2, false)
-            tasmota.set_power(MOTOR_FB1, false)
-            tasmota.set_power(MOTOR_FB2, false)
-            tasmota.set_power(CLAW, false)
+            gpio.digital_write(MOTOR_LR1, false)
+            gpio.digital_write(MOTOR_LR2, false)
+            gpio.digital_write(MOTOR_FB1, false)
+            gpio.digital_write(MOTOR_FB2, false)
+            gpio.digital_write(CLAW, false)
 
             print("claw animation finished")
             in_claw_animation = false

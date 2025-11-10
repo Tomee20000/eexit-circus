@@ -1,61 +1,35 @@
-def init()
-    # gpio_rx:16 gpio_tx:17
-    ser = serial(16, 17, 9600, serial.SERIAL_8E1)
+# gpio_rx:16 gpio_tx:17
+var ser = serial(16, 17, 9600, serial.SERIAL_8E1)
 
-    ser.write(bytes().fromstring("start\n"))   # send string "Hello"
-    
-    tasmota.resp_cmnd_done("Serial  initialized")
+var LDR1 = 32
+var LDR2 = 33
+var LDR3 = 25
+var LDR4 = 26
+
+def duck_command(cmd, idx, payload, payload_json)
+    payload += "\n"
+    ser.write(bytes().fromstring(payload))
+    tasmota.resp_cmnd_done()
 end
 
-def init_game()
-    ser.write(bytes().fromstring("init\n"))
-    tasmota.resp_cmnd_done("Game initialized")
+tasmota.add_cmd('duck', /cmd, idx, payload, payload_json->duck_command(cmd, idx, payload, payload_json))
+
+class DuckGameDriver
+    def every_100ms()
+        if !gpio.digital_read(LDR1)
+            ser.write(bytes().fromstring("shoot1\n"))
+        elif !gpio.digital_read(LDR2)
+            ser.write(bytes().fromstring("shoot2\n"))
+        elif !gpio.digital_read(LDR3)
+            ser.write(bytes().fromstring("shoot3\n"))
+        elif !gpio.digital_read(LDR4)
+            ser.write(bytes().fromstring("shoot4\n"))
+        end
+    end
 end
+  
+d1 = DuckGameDriver()
 
-def restart()
-    ser.write(bytes().fromstring("restart\n"))
-    tasmota.resp_cmnd_done("Esp32 restarted")
-end
+tasmota.add_driver(d1)
 
-def start_game()
-    ser.write(bytes().fromstring("start\n"))
-    tasmota.resp_cmnd_done("Game started")
-end
-
-def stop_game()
-    ser.write(bytes().fromstring("stop\n"))
-    tasmota.resp_cmnd_done("Game stopped")
-end
-
-def shoot1()
-    ser.write(bytes().fromstring("shoot1\n"))
-    tasmota.resp_cmnd_done("Duck 1 shot down")
-end
-
-def shoot2()
-    ser.write(bytes().fromstring("shoot2\n"))
-    tasmota.resp_cmnd_done("Duck 2 shot down")
-end
-
-def shoot3()
-    ser.write(bytes().fromstring("shoot3\n"))
-    tasmota.resp_cmnd_done("Duck 3 shot down")
-end
-
-def shoot4()
-    ser.write(bytes().fromstring("shoot4\n"))
-    tasmota.resp_cmnd_done("Duck 4 shot down")
-end
-
-tasmota.add_cmd("DUCKSTART", start_game)
-tasmota.add_cmd("DUCKSTOP", stop_game)
-tasmota.add_cmd("DUCKINIT", init_game)
-tasmota.add_cmd("RESTART", restart)
-tasmota.add_cmd("INIT", init)
-tasmota.add_cmd("DUCKSHOOT1", shoot1)
-tasmota.add_cmd("DUCKSHOOT2", shoot2)
-tasmota.add_cmd("DUCKSHOOT3", shoot3)
-tasmota.add_cmd("DUCKSHOOT4", shoot4)
-
-init()
 print ("DuckGame driver loaded")
