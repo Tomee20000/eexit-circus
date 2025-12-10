@@ -1,3 +1,5 @@
+#releket configolni kell, switcheket switch_d-re kell configolni
+
 import mqtt
 
 var IN1 = 26
