@@ -23,8 +23,7 @@ def runing_animation(cmd, idx, payload, payload_json)
         end
         tasmota.set_timer(250*i, t1)
     end
-    end
-
+    tasmota.resp_cmnd("Runinganimation" .. payload)
 end
 
 tasmota.add_cmd('runinganimation', /cmd, idx, payload, payload_json->runing_animation(cmd, idx, payload, payload_json))
