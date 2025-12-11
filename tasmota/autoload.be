@@ -13,7 +13,7 @@ autoload_module.update_files = [
     "autoload.be",
     "autoexec/clawmachine.be",
     "autoexec/cashregister.be",
-    "autoexec/animalwheel.be",
+    "autoexec/ceilingled.be",
     "autoexec/duckgame.be",
 ]
 
