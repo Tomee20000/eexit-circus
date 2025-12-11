@@ -10,21 +10,23 @@ def pwm_switcher(pwm_number, state)
     end
 end
 
-def runing_animation(number_of_rounds)
+def runing_animation(cmd, idx, payload, payload_json)
     for i: 1 .. 9
         pwm_switcher(i,0)   
     end
-    
-    for i: 1 .. 9
+
+    for i: 1 .. payload
+        for i: 1 .. 9
         def t1() 
             pwm_switcher(i,1)
             pwm_switcher(i-1,0) 
         end
         tasmota.set_timer(250*i, t1)
     end
-    tasmota.cmd("PWM" .. )
+    end
+
 end
 
-tasmota.add_cmd("UpdateScripts", autoload_module.update_scripts)
+tasmota.add_cmd('runinganimation', /cmd, idx, payload, payload_json->runing_animation(cmd, idx, payload, payload_json))
 
 print ("Ceiling led driver loaded")
