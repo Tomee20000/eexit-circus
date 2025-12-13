@@ -5,7 +5,8 @@ var autoload_files_for_topic = {
     "CCLAWMACHINECONTROLLER":"/autoexec/clawmachine.be",  
     "CCASHREGISTER":"/autoexec/cashregister.be",    
     "CDUCKGAME":"/autoexec/duckgame.be",
-    "CCEILINGLED":"/autoexec/ceilingled.be",  
+    "CCEILINGLED":"/autoexec/ceilingled.be",
+    "CSIGN":"/autoexec/sign.be",  
 }
 
 import string

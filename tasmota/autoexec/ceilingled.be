@@ -1,11 +1,12 @@
-var pwm1 = 23
-var pwm2 = 22
-var pwm3 = 21
-var pwm4 = 19
-var pwm5 = 18
-var pwm6 = 5
-var pwm7 = 17
-var pwm8 = 16
+var pwm1 = 32
+var pwm2 = 33
+var pwm3 = 25
+var pwm4 = 26
+var pwm5 = 27
+var pwm6 = 14
+var pwm7 = 13
+var pwm8 = 23
+#var pwm9 = 22
 
 var led_map = {1 : [pwm1,0],2 : [pwm2,0],3 : [pwm3,0],4 : [pwm4,0],5 : [pwm5,0],6 : [pwm6,0],7 : [pwm7,0],8 : [pwm8,0]}
 
@@ -50,6 +51,29 @@ class CeilingLed
         self.speed = speed
         self.speedcounter = self.speedcounter % speed + 1 
         tasmota.resp_cmnd("Speed set to " .. self.speed)
+    end
+
+    def all_on_dim()
+        for i: 1 .. led_map.size()
+            pwm_dimmer('',i,1)
+        end
+        tasmota.resp_cmnd("All led on")
+    end
+
+    def all_off_dim()
+        for i: 1 .. led_map.size()
+            pwm_dimmer('',i,0)
+        end
+        tasmota.resp_cmnd("All led off")
+    end
+
+    def all_running(cmd,i,rounds)
+        for j: 1 .. rounds
+            self.all_on_dim()
+            self.all_off_dim()
+        end
+
+        tasmota.resp_cmnd("All running, rounds: " .. rounds)
     end
 
     def running_led_switch(cmd, mode, rounds)
@@ -108,5 +132,10 @@ tasmota.add_driver(leddriver)
 tasmota.add_cmd("pwmdimmer", /cmd, pwm_number, state -> pwm_dimmer(cmd, number(pwm_number), number(state)))
 tasmota.add_cmd("runningled", /cmd, mode, rounds -> leddriver.running_led_switch(cmd, number(mode), number(rounds)))
 tasmota.add_cmd("runningspeed", /cmd, i, speed -> leddriver.set_speed(cmd, i, number(speed)))
+tasmota.add_cmd("allon", / -> leddriver.all_on_dim())
+tasmota.add_cmd("alloff", / -> leddriver.all_off_dim())
+tasmota.add_cmd("allrunning", /cmd, i, rounds -> leddriver.all_running(cmd,i,number(rounds)))
+
+leddriver.all_on_dim()
 
 print ("Ceiling led driver loaded")
