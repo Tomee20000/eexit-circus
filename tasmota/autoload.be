@@ -22,7 +22,7 @@ autoload_module.lib_files = [
 ]
 
 
-autoload_module.fetch_url = "https://raw.githubusercontent.com/Tomee20000/eexit-circus/refs/heads/main/tasmota/"
+autoload_module.fetch_url = "https://raw.githubusercontent.com/tomee20000/eexit-circus/refs/heads/main/tasmota/"
 
 autoload_module.init = def ()
     tasmota.add_cmd("UpdateScripts", autoload_module.update_scripts)

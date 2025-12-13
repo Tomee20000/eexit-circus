@@ -2,7 +2,7 @@ import autoload
 var topic = tasmota.cmd("Topic")["Topic"]
 
 var autoload_files_for_topic = {
-    "CCLAWMACHINE_CONTROLLER":"/autoexec/clawmachine.be",  
+    "CCLAWMACHINECONTROLLER":"/autoexec/clawmachine.be",  
     "CCASHREGISTER":"/autoexec/cashregister.be",    
     "CDUCKGAME":"/autoexec/duckgame.be",
     "CCEILINGLED":"/autoexec/ceilingled.be",  
