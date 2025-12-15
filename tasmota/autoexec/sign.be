@@ -18,6 +18,10 @@ var led6 = 14 #S
 
 class Sign
     def init()
+        
+    end
+
+    def any_key(cmd, idx)()
 
     end
 end
@@ -27,7 +31,7 @@ var signdriver = Sign()
 
 tasmota.add_driver(signdriver)
 
-tasmota.add_cmd("pwmdimmer", /cmd, pwm_number, state -> pwm_dimmer(cmd, number(pwm_number), number(state)))
+#tasmota.add_cmd("pwmdimmer", /cmd, pwm_number, state -> pwm_dimmer(cmd, number(pwm_number), number(state)))
 
 
 signdriver.all_on_dim()
