@@ -9,15 +9,15 @@ var MOTOR_CLAW1 = 5
 var MOTOR_CLAW2 = 2
 var CLAW = 12
 
-var JOY_L = 34
-var JOY_R = 35
-var JOY_F = 32
-var JOY_B = 33
+var JOY_L = 32
+var JOY_R = 33
+var JOY_F = 35
+var JOY_B = 34
 var JOY_BUTTON = 25
 
-var ENDSTOP_L = 26
-var ENDSTOP_F = 27
-var ENDSTOP_CLAW = 14 
+var ENDSTOP_L = 27
+var ENDSTOP_F = 14
+var ENDSTOP_CLAW = 26 
 
 var in_claw_animation = false
 var is_full_left = false
