@@ -10,14 +10,21 @@ using namespace std;
 #define PIN_ONLINE_PING 10
 #define PIN_TASMOTA_RX 20
 
-// Mozgási paraméterek (most már változó)
+#define DELAY_BASE 3
+
+
+unsigned long lastOnlineToggle = 0;
+const unsigned long ONLINE_INTERVAL = 10000; // 10 s
+// Mozgási paraméterek
 long MOVE_STEPS = 160000;
 int START_DELAY = 50;
-int MIN_DELAY = 5;
-int ACCEL_STEPS = 2000;
+int MIN_DELAY = DELAY_BASE;
+int ACCEL_STEPS = 5000;
 
+string espID = string(ID);
+
+bool onlineState = true;
 bool moving = false;
-
 string receivedMessage = "";
 char incomingChar;
 
@@ -25,16 +32,24 @@ void performHoming();
 void moveWithRamp(long steps);
 void moveSimple(int steps);
 void readSerial();
+void handleOnlinePing();
 void(* resetFunc) (void) = 0;
 
 HardwareSerial CommandSerial(1);
 
 void setup() {
   CommandSerial.begin(9600, SERIAL_8N1, PIN_TASMOTA_RX, -1);
-	Serial.begin(115200);
-  Serial.println("Stepper Ready.");
-  Serial.println("Use 'home', 'move', 'stop', or 'set <param> <value>'");
+  Serial.begin(115200);
+  delay(100);
+  while (CommandSerial.available()) CommandSerial.read();
 
+  lastOnlineToggle = millis();
+
+  Serial.print("Stepper Ready. ID:");
+  Serial.println(espID.c_str());
+  Serial.println("Use 'home', 'move', 'stop', or 'speed 1-10'");
+
+  pinMode(PIN_ONLINE_PING, OUTPUT);
   pinMode(PIN_STEP, OUTPUT);
   pinMode(PIN_DIR, OUTPUT);
   pinMode(PIN_HOME, INPUT_PULLUP);
@@ -42,8 +57,9 @@ void setup() {
 
   digitalWrite(PIN_STEP, LOW);
   digitalWrite(PIN_DIR, LOW);
+  digitalWrite(PIN_ONLINE_PING, LOW);
+  
   performHoming();
-
 }
 
 void loop() {
@@ -59,35 +75,59 @@ void loop() {
 }
 
 void performHoming() {
-  if (digitalRead(PIN_HOME) == HIGH) {
+  long stepCount = 0;
+
+  if (digitalRead(PIN_HOME)) {
     digitalWrite(PIN_DIR, LOW);
     moveSimple(10000);
   }
 
   digitalWrite(PIN_DIR, HIGH);
 
-  while (digitalRead(PIN_HOME) == LOW) {
+  while (!digitalRead(PIN_HOME)) {
+    int delayMicros;
+    if (stepCount < ACCEL_STEPS) {
+      delayMicros = map(stepCount, 0, ACCEL_STEPS, START_DELAY, DELAY_BASE);
+    } else {
+      delayMicros = DELAY_BASE;
+    }
+
     digitalWrite(PIN_STEP, HIGH);
-    delayMicroseconds(START_DELAY);
+    delayMicroseconds(delayMicros * 2);
     digitalWrite(PIN_STEP, LOW);
-    delayMicroseconds(START_DELAY);
+    delayMicroseconds(delayMicros * 2);
+
+    stepCount++;
+    readSerial();
   }
 }
 
 void moveWithRamp(long steps) {
   long stepCount = 0;
+  
   while (stepCount < steps && moving) {
-    if (digitalRead(PIN_HOME) == HIGH && digitalRead(PIN_DIR)) {
+    readSerial();
+
+    if (digitalRead(PIN_HOME) && digitalRead(PIN_DIR)) {
       return;
     }
-    readSerial();
+
+    if (!digitalRead(PIN_LASER)) {
+      moving = false;
+      delay(500);
+      performHoming();
+      Serial.println("Duck shot down");
+      return;
+    }
 
     int delayMicros;
     if (stepCount < ACCEL_STEPS) {
       delayMicros = map(stepCount, 0, ACCEL_STEPS, START_DELAY, MIN_DELAY);
-    } else if (stepCount < (steps - ACCEL_STEPS)) {
+    } 
+    else if (stepCount < (steps - ACCEL_STEPS)) {
       delayMicros = MIN_DELAY;
-    } else {
+    } 
+    else {
       long decelStep = stepCount - (steps - ACCEL_STEPS);
       delayMicros = map(decelStep, 0, ACCEL_STEPS, MIN_DELAY, START_DELAY);
     }
@@ -111,43 +151,56 @@ void moveSimple(int steps) {
 }
 
 void readSerial(){
-	while (CommandSerial.available()) {
-		incomingChar = CommandSerial.read();  // Read each character from the buffer	
-		
-		if (incomingChar == '\n') {  // Check if the user pressed Enter (new line character)
-			if (receivedMessage == "home"){
+  handleOnlinePing();
+  while (CommandSerial.available()) {
+    incomingChar = CommandSerial.read();
+    
+    if (incomingChar == '\n' && receivedMessage.find(espID) == 0) {
+      if (receivedMessage == espID + " home") {
         Serial.println(">> Homing...");
         performHoming();
         Serial.println(">> Homing done");
-			}
-			else if (receivedMessage == "move"){
+      }
+      else if (receivedMessage == espID + " move") {
         Serial.println(">> Start continuous motion");
         moving = true;
-			}
-			else if (receivedMessage == "stop"){
+      }
+      else if (receivedMessage == espID + " stop") {
         Serial.println(">> Stop motion");
         moving = false;
-			}
-			else if (receivedMessage.substr(0,5) == "speed"){
-        MIN_DELAY = 5 * (11 - stoi(receivedMessage.substr(6,2)));
+      }
+      else if (receivedMessage.substr(0,11) == espID + " speed") {
+        MIN_DELAY = DELAY_BASE * (11 - stoi(receivedMessage.substr(12,2)));
         Serial.print("Speed set to:");
+        Serial.print(stoi(receivedMessage.substr(12,2)));
+        Serial.print(" | Delay set to:");
         Serial.println(MIN_DELAY);
-			}
-      else if (receivedMessage == "restart"){
-				Serial.println("Restarting");
-				resetFunc();
-			}
-			else{
+      }
+      else if (receivedMessage == espID + " restart") {
+        Serial.println("Restarting");
+        resetFunc();
+      }
+      else {
         Serial.print("Unknown cmd: ");
         Serial.println(receivedMessage.c_str());
       }
 
-			receivedMessage = "";
+      receivedMessage = "";
+    }
+    else if (incomingChar == '\n') {
+      receivedMessage = "";
+    }
+    else {
+      receivedMessage += incomingChar;
+    }
+  }
+}
 
-			return;
-		}
-		else {
-			receivedMessage += incomingChar; // Append the character to the message string
-		}
-	}
+void handleOnlinePing() {
+  unsigned long now = millis();
+  if ((now - lastOnlineToggle) >= ONLINE_INTERVAL) {
+    onlineState = !onlineState;
+    digitalWrite(PIN_ONLINE_PING, onlineState ? LOW : HIGH);
+    lastOnlineToggle = now;
+  }
 }

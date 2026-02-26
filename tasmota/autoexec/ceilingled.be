@@ -32,10 +32,10 @@ def pwm_dimmer(cmd, pwm_number, state)
 end
 
 class CeilingLed
-    var round_enabled, round_on_led, maxled, time_counter, number_of_rounds, round_count, speed, speedcounter
+    var round_enabled, round_on_led, maxled, time_counter, number_of_rounds, round_count, speed, speed_counter
     def init()
         self.speed = 1
-        self.speedcounter = 1
+        self.speed_counter = 1
         self.round_enabled = false
         self.round_on_led = 0
         self.maxled = 8
@@ -49,7 +49,7 @@ class CeilingLed
 
     def set_speed(cmd, i, speed)
         self.speed = speed
-        self.speedcounter = self.speedcounter % speed + 1 
+        self.speed_counter = self.speed_counter % speed + 1 
         tasmota.resp_cmnd("Speed set to " .. self.speed)
     end
 
@@ -98,7 +98,7 @@ class CeilingLed
     end
 
     def every_100ms()
-        if self.speedcounter == self.speed
+        if self.speed_counter == self.speed
             if self.round_enabled && self.round_count != self.number_of_rounds
                 if self.round_on_led == 0
                     pwm_dimmer('',1,1)
@@ -118,9 +118,9 @@ class CeilingLed
                     self.round_on_led = 0
                 end
             end
-            self.speedcounter = 1
+            self.speed_counter = 1
         else
-            self.speedcounter = self.speedcounter + 1
+            self.speed_counter = self.speed_counter + 1
         end
     end
 end
@@ -139,3 +139,10 @@ tasmota.add_cmd("allrunning", /cmd, i, rounds -> leddriver.all_running(cmd,i,num
 leddriver.all_on_dim()
 
 print ("Ceiling led driver loaded")
+print ("Commands:")
+print ("pwmdimmerNUMBER STATE - Turns on a specific block - Number: number of block, State: 1-on 0-off")
+print ("runningledMODE ROUNDS - One block running -Mode: 1-on 0-off, Rounds: number of rounds it will make")
+print ("runningspeed SPEED - Speed: speed of runningled")
+print ("allon - Turns on all block")
+print ("allof - Turns off all block")
+print ("allrunning ROUNDS - Turns on, then off al the block - Rounds: number of rounds")

@@ -16,6 +16,7 @@ autoload_module.update_files = [
     "autoexec/ceilingled.be",
     "autoexec/duckgame.be",
     "autoexec/sign.be",
+    "autoexec/animalwheel.be",
 ]
 
 autoload_module.lib_files = [
