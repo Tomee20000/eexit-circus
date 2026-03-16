@@ -1,5 +1,6 @@
 #include <string>
 #include <Arduino.h>
+#include "driver/gpio.h"
 using namespace std;
 
 // PIN definíciók
@@ -10,32 +11,61 @@ using namespace std;
 #define PIN_ONLINE_PING 10
 #define PIN_TASMOTA_RX 20
 
-#define DELAY_BASE 3
-
+// Sebességre optimalizált alap
+#define DELAY_BASE 1
 
 unsigned long lastOnlineToggle = 0;
-const unsigned long ONLINE_INTERVAL = 10000; // 10 s
+const unsigned long ONLINE_INTERVAL = 10000;
+
 // Mozgási paraméterek
-long MOVE_STEPS = 160000;
-int START_DELAY = 50;
-int MIN_DELAY = DELAY_BASE;
-int ACCEL_STEPS = 5000;
+long MOVE_STEPS = 800000;
+
+// A lehető legnagyobb sebességre hangolva
+int START_DELAY = 100;     // indulási késleltetés (fél periódus)
+int MIN_DELAY = 2;        // végsebesség 
+int ACCEL_STEPS = 8000;   // rövid, agresszív gyorsítás
+int STEP_HIGH_US = 1;     // step HIGH pulse szélesség
 
 string espID = string(ID);
 
+int dir = 0;
 bool onlineState = true;
 bool moving = false;
 string receivedMessage = "";
 char incomingChar;
 
-void performHoming(); 
+void performHoming();
 void moveWithRamp(long steps);
-void moveSimple(int steps);
+void moveSimple(long steps, int delayUs = 20);
 void readSerial();
 void handleOnlinePing();
 void(* resetFunc) (void) = 0;
 
 HardwareSerial CommandSerial(1);
+
+// Gyorsabb GPIO kezelés ESP32-n
+inline void stepHigh() {
+  gpio_set_level((gpio_num_t)PIN_STEP, 1);
+}
+
+inline void stepLow() {
+  gpio_set_level((gpio_num_t)PIN_STEP, 0);
+}
+
+inline void dirWrite(int d) {
+  gpio_set_level((gpio_num_t)PIN_DIR, d ? 1 : 0);
+}
+
+inline void onlineWrite(bool state) {
+  gpio_set_level((gpio_num_t)PIN_ONLINE_PING, state ? 1 : 0);
+}
+
+inline void doStepFast(int delayMicros) {
+  stepHigh();
+  delayMicroseconds(STEP_HIGH_US);
+  stepLow();
+  if (delayMicros > 0) delayMicroseconds(delayMicros);
+}
 
 void setup() {
   CommandSerial.begin(9600, SERIAL_8N1, PIN_TASMOTA_RX, -1);
@@ -55,10 +85,10 @@ void setup() {
   pinMode(PIN_HOME, INPUT_PULLUP);
   pinMode(PIN_LASER, INPUT_PULLUP);
 
-  digitalWrite(PIN_STEP, LOW);
-  digitalWrite(PIN_DIR, LOW);
-  digitalWrite(PIN_ONLINE_PING, LOW);
-  
+  stepLow();
+  dirWrite(dir);
+  onlineWrite(LOW);
+
   performHoming();
 }
 
@@ -66,95 +96,98 @@ void loop() {
   readSerial();
 
   if (moving) {
-    digitalWrite(PIN_DIR, LOW);
+    dir = 0;
+    dirWrite(dir);
     moveWithRamp(MOVE_STEPS);
+    delay(50);
 
-    digitalWrite(PIN_DIR, HIGH);
+    dir = 1;
+    dirWrite(dir);
     moveWithRamp(MOVE_STEPS);
+    delay(50);
   }
 }
 
 void performHoming() {
   long stepCount = 0;
 
-  if (digitalRead(PIN_HOME)) {
-    digitalWrite(PIN_DIR, LOW);
-    moveSimple(10000);
+  if (!digitalRead(PIN_HOME)) {
+    dir = 0;
+    dirWrite(dir);
+    moveSimple(3000, 10);
+    delay(20);
   }
 
-  digitalWrite(PIN_DIR, HIGH);
+  dir = 1;
+  dirWrite(dir);
 
-  while (!digitalRead(PIN_HOME)) {
+  while (digitalRead(PIN_HOME)) {
     int delayMicros;
+
     if (stepCount < ACCEL_STEPS) {
-      delayMicros = map(stepCount, 0, ACCEL_STEPS, START_DELAY, DELAY_BASE);
+      delayMicros = map(stepCount, 0, ACCEL_STEPS, START_DELAY, MIN_DELAY + 4);
     } else {
-      delayMicros = DELAY_BASE;
+      delayMicros = MIN_DELAY + 4;
     }
 
-    digitalWrite(PIN_STEP, HIGH);
-    delayMicroseconds(delayMicros * 2);
-    digitalWrite(PIN_STEP, LOW);
-    delayMicroseconds(delayMicros * 2);
-
+    doStepFast(delayMicros);
     stepCount++;
-    readSerial();
+
+    // Nem minden lépésnél olvasunk serialt, mert lassít
+    if ((stepCount & 63) == 0) {
+      readSerial();
+    }
   }
 }
 
 void moveWithRamp(long steps) {
   long stepCount = 0;
-  
-  while (stepCount < steps && moving) {
-    readSerial();
 
-    if (digitalRead(PIN_HOME) && digitalRead(PIN_DIR)) {
+  while (stepCount < steps && moving) {
+    // Ezeket muszáj nézni minden lépésben
+    if (!digitalRead(PIN_HOME) && dir == 1) {
       return;
     }
 
     if (!digitalRead(PIN_LASER)) {
       moving = false;
-      delay(500);
+      delay(1000);
       performHoming();
       Serial.println("Duck shot down");
       return;
     }
 
     int delayMicros;
+
+    // Csak gyorsítás, nincs lassítás: max sebességre optimalizálva
     if (stepCount < ACCEL_STEPS) {
       delayMicros = map(stepCount, 0, ACCEL_STEPS, START_DELAY, MIN_DELAY);
-    } 
-    else if (stepCount < (steps - ACCEL_STEPS)) {
+    } else {
       delayMicros = MIN_DELAY;
-    } 
-    else {
-      long decelStep = stepCount - (steps - ACCEL_STEPS);
-      delayMicros = map(decelStep, 0, ACCEL_STEPS, MIN_DELAY, START_DELAY);
     }
 
-    digitalWrite(PIN_STEP, HIGH);
-    delayMicroseconds(delayMicros);
-    digitalWrite(PIN_STEP, LOW);
-    delayMicroseconds(delayMicros);
-
+    doStepFast(delayMicros);
     stepCount++;
+
+    // Ritkábban ellenőrizzük a soros parancsokat
+    if ((stepCount & 127) == 0) {
+      readSerial();
+    }
   }
 }
 
-void moveSimple(int steps) {
-  for (int i = 0; i < steps; i++) {
-    digitalWrite(PIN_STEP, HIGH);
-    delayMicroseconds(START_DELAY);
-    digitalWrite(PIN_STEP, LOW);
-    delayMicroseconds(START_DELAY);
+void moveSimple(long steps, int delayUs) {
+  for (long i = 0; i < steps; i++) {
+    doStepFast(delayUs);
   }
 }
 
-void readSerial(){
+void readSerial() {
   handleOnlinePing();
+
   while (CommandSerial.available()) {
     incomingChar = CommandSerial.read();
-    
+
     if (incomingChar == '\n' && receivedMessage.find(espID) == 0) {
       if (receivedMessage == espID + " home") {
         Serial.println(">> Homing...");
@@ -170,9 +203,25 @@ void readSerial(){
         moving = false;
       }
       else if (receivedMessage.substr(0,11) == espID + " speed") {
-        MIN_DELAY = DELAY_BASE * (11 - stoi(receivedMessage.substr(12,2)));
+        int speedVal = stoi(receivedMessage.substr(12,2));
+
+        // Ugyanaz a parancs marad, de agresszívebb sebesség mappinggel
+        switch (speedVal) {
+          case 1:  MIN_DELAY = 20; break;
+          case 2:  MIN_DELAY = 16; break;
+          case 3:  MIN_DELAY = 12; break;
+          case 4:  MIN_DELAY = 10; break;
+          case 5:  MIN_DELAY = 8;  break;
+          case 6:  MIN_DELAY = 6;  break;
+          case 7:  MIN_DELAY = 5;  break;
+          case 8:  MIN_DELAY = 4;  break;
+          case 9:  MIN_DELAY = 3;  break;
+          case 10: MIN_DELAY = 2;  break;
+          default: MIN_DELAY = 2;  break;
+        }
+
         Serial.print("Speed set to:");
-        Serial.print(stoi(receivedMessage.substr(12,2)));
+        Serial.print(speedVal);
         Serial.print(" | Delay set to:");
         Serial.println(MIN_DELAY);
       }
@@ -188,6 +237,26 @@ void readSerial(){
       receivedMessage = "";
     }
     else if (incomingChar == '\n') {
+      if (receivedMessage == "homeall") {
+        Serial.println(">> Homing all...");
+        performHoming();
+        Serial.println(">> Homing done");
+      }
+      else if (receivedMessage == "moveall") {
+        if (espID == "duck1" || espID == "duck3") {
+          Serial.println(">> Start continuous motion");
+          moving = true;
+        }
+        else {
+          delay(5000);
+          Serial.println(">> Start continuous motion");
+          moving = true;
+        }
+      }
+      else if (receivedMessage == "stopall") {
+        Serial.println(">> Stop all motion");
+        moving = false;
+      }
       receivedMessage = "";
     }
     else {
@@ -200,7 +269,7 @@ void handleOnlinePing() {
   unsigned long now = millis();
   if ((now - lastOnlineToggle) >= ONLINE_INTERVAL) {
     onlineState = !onlineState;
-    digitalWrite(PIN_ONLINE_PING, onlineState ? LOW : HIGH);
+    onlineWrite(onlineState ? LOW : HIGH);
     lastOnlineToggle = now;
   }
 }

@@ -15,14 +15,29 @@ class DuckGameDriver
         tasmota.resp_cmnd("duck" .. idx .. " homing")
     end
 
+    def homeall(cmd, idx)
+        ser.write(bytes().fromstring("homeall\n"))
+        tasmota.resp_cmnd("homing all")
+    end
+
     def move(cmd, idx)
         ser.write(bytes().fromstring("duck" .. idx .. " move\n"))
         tasmota.resp_cmnd("duck" .. idx .. " moving")
     end
 
+    def moveall(cmd, idx)
+        ser.write(bytes().fromstring("moveall\n"))
+        tasmota.resp_cmnd("moving all")
+    end
+
     def stop(cmd, idx)
         ser.write(bytes().fromstring("duck" .. idx .. " stop\n"))
         tasmota.resp_cmnd("duck" .. idx .. " stopped")
+    end
+
+    def stopall(cmd, idx)
+        ser.write(bytes().fromstring("stopall\n"))
+        tasmota.resp_cmnd("all stopped")
     end
 
     def restart(cmd, idx)
@@ -44,15 +59,21 @@ var duckgamedriver = DuckGameDriver()
 tasmota.add_driver(duckgamedriver)
 
 tasmota.add_cmd("home", /cmd, idx-> duckgamedriver.home(cmd, idx))
+tasmota.add_cmd("homeall", /cmd, idx-> duckgamedriver.homeall(cmd, idx))
 tasmota.add_cmd("move", /cmd, idx-> duckgamedriver.move(cmd, idx))
+tasmota.add_cmd("moveall", /cmd, idx-> duckgamedriver.moveall(cmd, idx))
 tasmota.add_cmd("stop", /cmd, idx-> duckgamedriver.stop(cmd, idx))
+tasmota.add_cmd("stopall", /cmd, idx-> duckgamedriver.stopall(cmd, idx))
 tasmota.add_cmd("duckrestart", /cmd, idx-> duckgamedriver.restart(cmd, idx))
 tasmota.add_cmd("speed", /cmd, idx, speed-> duckgamedriver.setspeed(cmd, idx, speed))
 
-print ("DuckGame driver loaded")
-print ("Command example: duck1 home - duck1 is unique id of the first duck")
-print ("home - homing")
-print ("move - starts moving up and down")
-print ("stop - stops the moving")
-print ("duckrestart - restarts the esp32-c3 supermini")
-print ("speed - sets the speed of moving up and down 1-10")
+print("DuckGame driver loaded")
+print("Command example: home1 - duck1 start homing")
+print("home - start homing")
+print("homeall - start homing for all ducks")
+print("move - start moving up and down")
+print("moveall - start moving all ducks up and down")
+print("stop - stop moving")
+print("stopall - stop all ducks")
+print("duckrestart - restart the ESP32-C3 SuperMini")
+print("speed - set the speed of moving up and down (1–10)")
