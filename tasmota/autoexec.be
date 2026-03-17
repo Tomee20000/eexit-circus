@@ -7,7 +7,8 @@ var autoload_files_for_topic = {
     "CDUCKGAME":"/autoexec/duckgame.be",
     "CCEILINGLED":"/autoexec/ceilingled.be",
     "CSIGN":"/autoexec/sign.be",
-    "CANIMALWHEEL":"/autoexec/animalwheel.be",  
+    "CANIMALWHEEL":"/autoexec/animalwheel.be",
+    "CCYLINDER":"/autoexec/cylinder.be",  
 }
 
 import string

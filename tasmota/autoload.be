@@ -17,6 +17,7 @@ autoload_module.update_files = [
     "autoexec/duckgame.be",
     "autoexec/sign.be",
     "autoexec/animalwheel.be",
+    "autoexec/cylinder.be",
 ]
 
 autoload_module.lib_files = [

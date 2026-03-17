@@ -55,7 +55,7 @@ class ClawMachineDriver
         tasmota.resp_cmnd("Game disabled")
     end
 
-    def every_50ms()
+    def loop()
         # not in claw animation and coin was inserted
         if !self.in_claw_animation && self.is_coin_inserted
             #left
