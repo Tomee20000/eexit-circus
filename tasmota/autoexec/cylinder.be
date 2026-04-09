@@ -1,3 +1,4 @@
+import math
 
 var IN1 = 14
 var IN2 = 13
@@ -7,22 +8,14 @@ var IN4 = 21
 var LAOUT = 26
 var LAIN = 27
 
-var homing_steps = 200
+var homing_steps = 500
 var speed = 1000
 
+#absolute positions
 var pos1 = 1000
 var pos2 = 2000
 var pos3 = 3000
 var pos4 = 4000
-
-var pos1_time = 2000
-var pos2_time = 2000
-var pos3_time = 2000
-var pos4_time = 2000
-
-#-
-switchmode0 1
--#
 
 class CylinderDriver
     var actual_position
@@ -39,7 +32,7 @@ class CylinderDriver
         gpio.digital_write(LAIN, gpio.LOW)
         gpio.digital_write(LAOUT, gpio.HIGH)
 
-        tasmota.set_timer(4000, / ->
+        tasmota.set_timer(5000, / ->
             gpio.digital_write(LAOUT, gpio.LOW)
         )
         tasmota.resp_cmnd("Cylinder locked")
@@ -48,7 +41,7 @@ class CylinderDriver
     def unlock(cmd,idx) #blokkolni kell hogy teljes nyitásig ne mozogjon el
         gpio.digital_write(LAOUT, gpio.LOW)
         gpio.digital_write(LAIN, gpio.HIGH)
-        tasmota.delay(4000) 
+        tasmota.delay(5000) 
         gpio.digital_write(LAIN, gpio.LOW)
         tasmota.resp_cmnd("Cylinder unlocked")
     end
@@ -59,7 +52,7 @@ class CylinderDriver
 
             while !gpio.digital_read(IN4)
                 tasmota.cmd("motormove " .. homing_steps);
-                tasmota.delay(50)
+                tasmota.delay((speed / homing_steps ) + 20)
             end
 
             self.actual_position = 0   
@@ -72,34 +65,34 @@ class CylinderDriver
     def set_pos(cmd, i, position)
         if position == 1
             self.unlock()
-            tasmota.cmd("motorMove " .. pos1);
-            tasmota.set_timer(pos1_time, / ->
+            tasmota.cmd("motorMove " .. pos1 - self.actual_position);
+            tasmota.set_timer(math.abs(number(pos1 - self.actual_position)), / ->
                 self.lock()
             )   
-            self.actual_position += pos1
+            self.actual_position = pos1
         elif position == 2
             self.unlock()
-            tasmota.cmd("motorMove " .. pos2);
-            tasmota.set_timer(pos2_time, / ->
+            tasmota.cmd("motorMove " .. pos2 - self.actual_position);
+            tasmota.set_timer(math.abs(pos2 - self.actual_position), / ->
                 self.lock()
             )
-            self.actual_position += pos2
+            self.actual_position = pos2
 
         elif position == 3
             self.unlock()
-            tasmota.cmd("motorMove " .. pos3);
-            tasmota.set_timer(pos3_time, / ->
+            tasmota.cmd("motorMove " .. pos3 - self.actual_position);
+            tasmota.set_timer(math.abs(pos3 - self.actual_position), / ->
                 self.lock()
             )
-            self.actual_position += pos3
+            self.actual_position = pos3
 
         elif position == 4
             self.unlock()
-            tasmota.cmd("motorMove " .. pos4);
-            tasmota.set_timer(pos4_time, / ->
+            tasmota.cmd("motorMove " .. pos4 - self.actual_position);
+            tasmota.set_timer(math.abs(pos4 - self.actual_position), / ->
                 self.lock()
             )
-            self.actual_position += pos4
+            self.actual_position = pos4
         else
             tasmota.resp_cmnd("Bad argument:" .. position)
             return

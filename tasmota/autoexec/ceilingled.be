@@ -136,7 +136,7 @@ tasmota.add_cmd("allon", / -> leddriver.all_on_dim())
 tasmota.add_cmd("alloff", / -> leddriver.all_off_dim())
 tasmota.add_cmd("allrunning", /cmd, i, rounds -> leddriver.all_running(cmd,i,number(rounds)))
 
-leddriver.all_on_dim()
+leddriver.all_off_dim()
 
 print ("Ceiling led driver loaded")
 print ("Commands:")
