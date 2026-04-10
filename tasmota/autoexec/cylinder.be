@@ -114,8 +114,10 @@ tasmota.add_cmd("pos", /cmd, i, position -> cylinderdriver.set_pos(cmd, i, numbe
 tasmota.cmd("MotorRPM " .. speed);
 
 print("Cylinder driver loaded")
+print("--------------------------------------------------------------")
 print("Commands:")
 print("lock - locks the cylinder in place")
 print("unlock - unlocks the cylinder")
 print("home - start homing")
 print("pos <n> - goes to the given position")
+print("--------------------------------------------------------------")

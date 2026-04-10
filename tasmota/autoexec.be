@@ -8,7 +8,8 @@ var autoload_files_for_topic = {
     "CCEILINGLED":"/autoexec/ceilingled.be",
     "CSIGN":"/autoexec/sign.be",
     "CANIMALWHEEL":"/autoexec/animalwheel.be",
-    "CCYLINDER":"/autoexec/cylinder.be",  
+    "CCYLINDER":"/autoexec/cylinder.be",
+    "CKNIFEGAME":"/autoexec/knifegame.be",  
 }
 
 import string

@@ -1,5 +1,5 @@
 #-
-ha sokáig bent a kés akkor forogjon tovább
+
 -#
 
 import math
@@ -79,6 +79,7 @@ class KnifeGame
         end
         
         self.strip.show()
+        self.enable_game()
 
         tasmota.resp_cmnd("Colors initialized")
     end
@@ -96,6 +97,7 @@ class KnifeGame
         end
         
         self.strip.show()
+        self.enable_game()
 
         tasmota.resp_cmnd("Colors initialized randomly")
     end
@@ -177,7 +179,11 @@ class KnifeGame
                 self.triggered = current
                 self.rotate(current)
             end
+        elif self.stable_cnt == 30 && current != 0
+            self.stable_cnt = 1
+            self.triggered = 0
         end
+
 
         if current == 0
             self.triggered = 0
@@ -202,9 +208,11 @@ tasmota.add_cmd("off", / -> knifegamedriver.led_off())
 tasmota.add_cmd("rotate", /cmd, i, idx -> knifegamedriver.rotate(number(idx)))
 
 print("KnifeGame driver loaded")
+print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
 print("off - led off")
 print("init - initialize the colors, no white")
 print("rndinit - initialize the colors, with white, random order")
 print("rotate <n> - rotates the <n> block")
+print("--------------------------------------------------------------")

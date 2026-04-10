@@ -139,6 +139,7 @@ tasmota.add_cmd("allrunning", /cmd, i, rounds -> leddriver.all_running(cmd,i,num
 leddriver.all_off_dim()
 
 print ("Ceiling led driver loaded")
+print("--------------------------------------------------------------")
 print ("Commands:")
 print ("pwmdimmerNUMBER STATE - Turns on a specific block - Number: number of block, State: 1-on 0-off")
 print ("runningledMODE ROUNDS - One block running -Mode: 1-on 0-off, Rounds: number of rounds it will make")
@@ -146,3 +147,4 @@ print ("runningspeed SPEED - Speed: speed of runningled")
 print ("allon - Turns on all block")
 print ("allof - Turns off all block")
 print ("allrunning ROUNDS - Turns on, then off al the block - Rounds: number of rounds")
+print("--------------------------------------------------------------")
