@@ -8,8 +8,8 @@ var IN4 = 21
 var LAOUT = 26
 var LAIN = 27
 
-var homing_steps = 500
-var speed = 1000
+var homing_steps = 200
+var speed = 250
 
 #absolute positions
 var pos1 = 1000
@@ -73,7 +73,7 @@ class CylinderDriver
         elif position == 2
             self.unlock()
             tasmota.cmd("motorMove " .. pos2 - self.actual_position);
-            tasmota.set_timer(math.abs(pos2 - self.actual_position), / ->
+            tasmota.set_timer(math.abs(number(pos2 - self.actual_position)), / ->
                 self.lock()
             )
             self.actual_position = pos2
@@ -81,7 +81,7 @@ class CylinderDriver
         elif position == 3
             self.unlock()
             tasmota.cmd("motorMove " .. pos3 - self.actual_position);
-            tasmota.set_timer(math.abs(pos3 - self.actual_position), / ->
+            tasmota.set_timer(math.abs(number(pos3 - self.actual_position)), / ->
                 self.lock()
             )
             self.actual_position = pos3
@@ -89,12 +89,12 @@ class CylinderDriver
         elif position == 4
             self.unlock()
             tasmota.cmd("motorMove " .. pos4 - self.actual_position);
-            tasmota.set_timer(math.abs(pos4 - self.actual_position), / ->
+            tasmota.set_timer(math.abs(number(pos4 - self.actual_position)), / ->
                 self.lock()
             )
             self.actual_position = pos4
         else
-            tasmota.resp_cmnd("Bad argument:" .. position)
+            tasmota.resp_cmnd("Bad argument: " .. position)
             return
         end
 
