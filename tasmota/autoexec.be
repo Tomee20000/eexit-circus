@@ -10,6 +10,7 @@ var autoload_files_for_topic = {
     "CANIMALWHEEL":"/autoexec/animalwheel.be",
     "CCYLINDER":"/autoexec/cylinder.be",
     "CKNIFEGAME":"/autoexec/knifegame.be",  
+    "CELEPHANT":"/autoexec/elephant.be",
 }
 
 import string
