@@ -1,24 +1,24 @@
 #-
-#0072B2   (kék – erős, tiszta)
-#F0E442   (sárga – világos, kontrasztos)
-#D55E00   (piros helyett narancsos vörös)
-#117733   (sötétzöld – eltolva, hogy ne keveredjen)
-#CC79A7   (lila / magenta – jól elkülönül)
 #FFFFFF   (fehér)
+#0D00FF   (kék – erős, tiszta)
+#FF5F15   (sárga – világos, kontrasztos)
+#FF0000   (piros helyett narancsos vörös)
+#004D1A   (sötétzöld – eltolva, hogy ne keveredjen)
+#B10061   (lila / magenta – jól elkülönül)
 
 light.set({"power":true, "rgb":"0000FF"})
 -#
 
 import mqtt
 
-var input1 = 0 #
-var input2 = 0 #
-var input3 = 0 #
-var input4 = 0 #
-var input5 = 0 #
-var input6 = 0 #
+var input1 = 26 #
+var input2 = 27 #
+var input3 = 14 #
+var input4 = 13 #
+var input5 = 23 #
+var input6 = 22 #
 
-var color_map = ["FFFFFF","0072B2","F0E442","D55E00","117733","CC79A7"]
+var color_map = ["FFFFFF","0D00FF","FF5F15","FF0000","004D1A","B10061"]
 
 class Elephant
     var current_color, last_input, enable
@@ -27,6 +27,7 @@ class Elephant
         self.current_color = 0
         self.last_input = 0
         self.enable = false
+        light.set({"power":false, "rgb":[0]})
     end
 
     def enable_game()
@@ -41,8 +42,8 @@ class Elephant
     end
 
     def change_color() 
-        light.set({"power":true, "rgb":[self.current_color]})
-        mqtt.publish(tasmota.cmd("Topic")["Topic"], [self.current_color])
+        light.set({"power":true, "rgb":color_map[self.current_color]})
+        mqtt.publish(tasmota.cmd("Topic")["Topic"], color_map[self.current_color])
     end
 
     def every_50ms()

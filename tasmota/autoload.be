@@ -20,6 +20,7 @@ autoload_module.update_files = [
     "autoexec/cylinder.be",
     "autoexec/knifegame.be",
     "autoexec/elephant.be",
+    "autoexec/handgame.be",
 ]
 
 autoload_module.lib_files = [
