@@ -11,7 +11,10 @@ var autoload_files_for_topic = {
     "CCYLINDER":"/autoexec/cylinder.be",
     "CKNIFEGAME":"/autoexec/knifegame.be",  
     "CELEPHANT":"/autoexec/elephant.be",
-    "CHANDGAME'":"/autoexec/handgame.be",
+    "CHANDGAME1":"/autoexec/handgame1.be",
+    "CHANDGAME2":"/autoexec/handgame2.be",
+    "CHANDGAME3":"/autoexec/handgame3.be",
+    "CHANDGAME4":"/autoexec/handgame4.be",
 }
 
 import string

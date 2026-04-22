@@ -44,6 +44,7 @@ class Elephant
     def change_color() 
         light.set({"power":true, "rgb":color_map[self.current_color]})
         mqtt.publish(tasmota.cmd("Topic")["Topic"], color_map[self.current_color])
+        tasmota.cmd("State")
     end
 
     def every_50ms()
