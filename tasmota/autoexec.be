@@ -15,6 +15,7 @@ var autoload_files_for_topic = {
     "CHANDGAME2":"/autoexec/handgame2.be",
     "CHANDGAME3":"/autoexec/handgame3.be",
     "CHANDGAME4":"/autoexec/handgame4.be",
+    "CSAWBOX":"/autoexec/sawbox.be",
 }
 
 import string

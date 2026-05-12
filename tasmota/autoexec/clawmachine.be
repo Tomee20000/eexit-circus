@@ -129,7 +129,7 @@ class ClawMachineDriver
         end
 
         #claw is up
-        if gpio.digital_read(ENDSTOP_CLAW) && self.motor_claw_state == 2 && self.in_claw_animation
+        if !gpio.digital_read(ENDSTOP_CLAW) && self.motor_claw_state == 2 && self.in_claw_animation
             print("claw stop up")
             
             #claw stops

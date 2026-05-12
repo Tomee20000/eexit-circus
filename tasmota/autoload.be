@@ -24,6 +24,7 @@ autoload_module.update_files = [
     "autoexec/handgame2.be",
     "autoexec/handgame3.be",
     "autoexec/handgame4.be",
+    "autoexec/sawbox.be",
 ]
 
 autoload_module.lib_files = [
