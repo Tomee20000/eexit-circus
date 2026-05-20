@@ -1,14 +1,12 @@
 import mqtt
 import json
 
-var uid_map = {"F42A6E05": 1,"B357B303": 2, "3FF4F829": 3,"0D807606": 4}
-
-class Handgamereader
+class BallGame
     var timer, sent_timeout
 
     def on_mqtt_message(topic, payload)
         if topic == "tele/" .. tasmota.cmd("Topic")["Topic"] .. "/SENSOR"
-            mqtt.publish(tasmota.cmd("Topic")["Topic"] .. "/CARD", str(uid_map[json.load(payload)["PN532"]["UID"]]))
+            mqtt.publish(tasmota.cmd("Topic")["Topic"] .. "/BALL", str(json.load(payload)["PN532"]["DATA"]))
             self.timer = 0
             self.sent_timeout = false
         end
@@ -23,13 +21,13 @@ class Handgamereader
     def every_second()
         self.timer = self.timer + 1
         if self.timer > 5 && !self.sent_timeout
-            mqtt.publish(tasmota.cmd("Topic")["Topic"] .. "/CARD", "-")
+            mqtt.publish(tasmota.cmd("Topic")["Topic"] .. "/BALL", "-")
             self.sent_timeout = true
         end
     end
 end
 
-var handgamereaderdriver = Handgamereader()
-tasmota.add_driver(handgamereaderdriver)
+var ballgamedriver = BallGame()
+tasmota.add_driver(ballgamedriver)
 
-print("Handgamereader driver loaded")
+print("Ballgame driver loaded")

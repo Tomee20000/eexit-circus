@@ -9,6 +9,8 @@ class AnimalWheel
     var wheel_pos, analog, a, last_a1, last_a2, last_a3, last_a4, last_a5, changed, last_changed_time
 
     def init()
+        tasmota.cmd("I2SGain 70")
+
         self.wheel_pos = []
         self.analog = json.load(tasmota.read_sensors())["ANALOG"]
         self.changed = false
@@ -72,7 +74,7 @@ class AnimalWheel
     end
 
     def play_sound()
-        if self.changed && (tasmota.millis() - self.last_changed_time) > 1000 && (tasmota.millis() - self.last_changed_time) < 2000 
+        if self.changed && (tasmota.millis() - self.last_changed_time) > 500 && (tasmota.millis() - self.last_changed_time) < 1000 
             self.changed = false
             var latest_pos = 6
             var latest_time = 0
@@ -92,15 +94,15 @@ class AnimalWheel
             print("Latest pos: " .. latest_pos)
 
             if latest_pos == 1
-                tasmota.cmd("i2ssay one")
+                tasmota.cmd("I2SPlay /mp3/monkey.mp3")
             elif latest_pos == 2
-                tasmota.cmd("i2ssay two")
+                tasmota.cmd("I2SPlay /mp3/horse.mp3")
             elif latest_pos == 3
-                tasmota.cmd("i2ssay three")
+                tasmota.cmd("I2SPlay /mp3/snake.mp3")
             elif latest_pos == 4
-                tasmota.cmd("i2ssay four")
+                tasmota.cmd("I2SPlay /mp3/elephant.mp3")
             elif latest_pos == 5
-                tasmota.cmd("i2ssay five")
+                tasmota.cmd("I2SPlay /mp3/tiger.mp3")
             end
         
         end

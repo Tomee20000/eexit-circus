@@ -21,10 +21,9 @@ autoload_module.update_files = [
     "autoexec/knifegame.be",
     "autoexec/elephant.be",
     "autoexec/handgame1.be",
-    "autoexec/handgame2.be",
-    "autoexec/handgame3.be",
-    "autoexec/handgame4.be",
+    "autoexec/handgamereader.be",
     "autoexec/sawbox.be",
+    "autoexec/ballgame.be",
 ]
 
 autoload_module.lib_files = [

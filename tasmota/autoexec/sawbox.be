@@ -43,10 +43,12 @@ class SawBox
     end
 
     def every_50ms()
-        if self.counter < (self.count_per_led * self.led_count)
+        if self.counter < (self.count_per_led * self.led_count) && self.counter > 0
             self.strip.set_pixel_color(29-(self.counter/self.count_per_led-1), self.red_color, 255)
             print("Counter " .. self.counter)
-        else
+        end
+
+        if self.counter >= (self.count_per_led * self.led_count)
             for i: 0..(self.led_count - 1)
                 self.strip.set_pixel_color(i, self.green_color, 255)
                 tasmota.set_power(OUT1, false)
@@ -65,5 +67,5 @@ tasmota.add_cmd("init", /cmd, idx -> sawboxdriver.initGame())
 print("SawBox driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
-print("")
+print("init - Initialize the led")
 print("--------------------------------------------------------------")

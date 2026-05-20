@@ -12,9 +12,14 @@ var autoload_files_for_topic = {
     "CKNIFEGAME":"/autoexec/knifegame.be",  
     "CELEPHANT":"/autoexec/elephant.be",
     "CHANDGAME1":"/autoexec/handgame1.be",
-    "CHANDGAME2":"/autoexec/handgame2.be",
-    "CHANDGAME3":"/autoexec/handgame3.be",
-    "CHANDGAME4":"/autoexec/handgame4.be",
+    "CHANDGAME1":"/autoexec/handgamereader.be",
+    "CHANDGAME2":"/autoexec/handgamereader.be",
+    "CHANDGAME3":"/autoexec/handgamereader.be",
+    "CHANDGAME4":"/autoexec/handgamereader.be",
+    "CBALLGAME1":"/autoexec/ballgame.be",
+    "CBALLGAME2":"/autoexec/ballgame.be",
+    "CBALLGAME3":"/autoexec/ballgame.be",
+    "CBALLGAME4":"/autoexec/ballgame.be",
     "CSAWBOX":"/autoexec/sawbox.be",
 }
 
