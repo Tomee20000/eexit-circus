@@ -6,7 +6,7 @@ class BallGame
 
     def on_mqtt_message(topic, payload)
         if topic == "tele/" .. tasmota.cmd("Topic")["Topic"] .. "/SENSOR"
-            mqtt.publish(tasmota.cmd("Topic")["Topic"] .. "/BALL", str(json.load(payload)["PN532"]["DATA"]))
+            mqtt.publish(tasmota.cmd("Topic")["Topic"] .. "/BALL", str(json.load(payload)["PN532"]["Data"]))
             self.timer = 0
             self.sent_timeout = false
         end
