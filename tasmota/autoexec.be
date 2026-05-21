@@ -20,6 +20,8 @@ var autoload_files_for_topic = {
     "CBALLGAME2":"/autoexec/ballgame.be",
     "CBALLGAME3":"/autoexec/ballgame.be",
     "CBALLGAME4":"/autoexec/ballgame.be",
+    "CBALLGAME5":"/autoexec/ballgame.be",
+    "CBALLGAME6":"/autoexec/ballgame.be",
     "CSAWBOX":"/autoexec/sawbox.be",
 }
 

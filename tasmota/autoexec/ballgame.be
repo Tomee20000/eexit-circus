@@ -28,6 +28,7 @@ class BallGame
         self.timer = 0
         self.sent_timeout = false
         mqtt.subscribe("tele/" .. self.topic .. "/SENSOR", /t, idx, data, b -> self.on_mqtt_message(t, data))
+        mqtt.publish(self.topic .. "/BALL", "-")
     end
 
     def every_second()
