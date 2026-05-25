@@ -1,7 +1,7 @@
 import mqtt
 import json
 
-var uid_map = {"F42A6E05": 1,"B357B303": 2, "3FF4F829": 3,"0D807606": 4}
+var uid_map = {"F42A6E05": 1,"B357B303": 2, "3FF4F829": 3,"0D807606": 4, "97A37606": 5, "26567306": 6, "8CAD7306": 7}
 
 class Handgamereader
     var timer, sent_timeout, topic
@@ -19,7 +19,7 @@ class Handgamereader
                 return nil
             end
 
-            mqtt.publish(self.topic .. "/CARD", str(data))
+            mqtt.publish(self.topic .. "/CARD", str(uid_map[data]))
             self.timer = 0
             self.sent_timeout = false
         end

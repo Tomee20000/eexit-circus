@@ -5,7 +5,6 @@
 #FF0000   (piros helyett narancsos vörös)
 #004D1A   (sötétzöld – eltolva, hogy ne keveredjen)
 #B10061   (lila / magenta – jól elkülönül)
-#000000   (fekete - szünet miatt kell)
 
 light.set({"power":true, "rgb":"0000FF"})
 -#
@@ -14,31 +13,55 @@ import mqtt
 import json
 
 var uid_map = {"F42A6E05": 1,"B357B303": 2, "3FF4F829": 3,"0D807606": 4}
-var color_map = ["FFFFFF","0D00FF","FF5F15","FF0000","004D1A","B10061",""]
+var color_map = ["FFFFFF","0D00FF","FF5F15","FF0000","004D1A","B10061"]
 
 class Handgame1
-    var enable, elephant_color, next_color, blink_current, switched, blinking
+    var enable, elephant_color, next_color, blink_current, blinking
+
+    def game_solved_blink()
+        light.set({"power":true, "rgb":"008000"})
+        tasmota.delay(250)
+        light.set({"power":false, "rgb":"008000"})
+        tasmota.delay(250)
+        light.set({"power":true, "rgb":"008000"})
+        tasmota.delay(250)
+        light.set({"power":false, "rgb":"008000"})
+        tasmota.delay(250)
+        light.set({"power":true, "rgb":"008000"})
+        tasmota.delay(250)
+        light.set({"power":false, "rgb":"008000"})
+        tasmota.cmd("State")
+    end
 
     def on_mqtt_message(topic, payload)
         if topic == "tele/CHANDGAME2/SENSOR" && self.enable
             if json.load(payload).find("Switch1", nil) == nil
                 return nil
             else
+                print(self.elephant_color)
+                print(self.next_color)
+                print(color_map[self.next_color])
                 if self.elephant_color == color_map[self.next_color] && self.next_color < 6
                     self.blinking = false
                     self.next_color += 1
-                    light.set({"power":true, "rgb":color_map[self.elephant_color]})
+                    light.set({"power":true, "rgb":self.elephant_color})
                     tasmota.cmd("State")
                 elif self.elephant_color != color_map[self.next_color] && self.next_color < 6
-                    self.blinking = true
-                    light.set({"power":false, "rgb":"FFFFFF"})
-                    tasmota.cmd("State")
+                    if !self.blinking
+                        light.set({"power":false, "rgb":color_map[0]})
+                        tasmota.cmd("State")
+                        self.elephant_color = nil
+                        self.next_color = 0
+                        self.blink_current = 0
+                        self.blinking = true
+                    end
                 end
 
                 if self.next_color == 6
                     print("Game solved")
-                    light.set({"power":true, "rgb":"008000"})
-                    tasmota.cmd("State")
+                    self.enable = false
+                    self.blinking = false
+                    tasmota.set_timer(1000, / -> self.game_solved_blink())
                 end
             end
         elif topic == "CELEPHANT"
@@ -52,16 +75,18 @@ class Handgame1
         light.set({"power":false, "rgb":"FFFFFF"})
         tasmota.cmd("State")
         self.enable = false
-        self.elephant_color = 0
+        self.elephant_color = nil
         self.next_color = 0
         self.blink_current = 0
-        self.switched = false
         self.blinking = false
     end
 
     def enable_game()
         self.enable = true
         self.blinking = true
+        self.elephant_color = nil
+        self.next_color = 0
+        self.blink_current = 0
         tasmota.resp_cmnd("Game enabled")
     end
 
@@ -75,13 +100,14 @@ class Handgame1
 
     def every_second()
         if self.blinking
-            light.set({"power":true, "rgb":color_map[self.blink_current]})
-            tasmota.cmd("State")
 
-            if self.blink_current < 7
+            if self.blink_current < 6
+                light.set({"power":true, "rgb":color_map[self.blink_current]})
+                tasmota.cmd("State")
                 self.blink_current += 1
-            else
+            else    
                 self.blink_current = 0
+                light.set({"power":false, "rgb":color_map[self.blink_current]})
             end
         end
     end
