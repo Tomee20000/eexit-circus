@@ -92,7 +92,10 @@ class Handgame1
 end
 
 var handgamedriver = Handgame1()
+var handgamereaderdriver = Handgamereader()
+
 tasmota.add_driver(handgamedriver)
+tasmota.add_driver(handgamereaderdriver)
 
 tasmota.add_cmd("enable", / -> handgamedriver.enable_game())
 tasmota.add_cmd("disable", / -> handgamedriver.disable_game())

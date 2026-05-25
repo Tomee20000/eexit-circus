@@ -27,7 +27,7 @@ autoload_module.update_files = [
 ]
 
 autoload_module.lib_files = [
-    "/lib/LibMultiplexer.be",
+    "/lib/LibHandReader.be",
 ]
 
 
