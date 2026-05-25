@@ -22,7 +22,6 @@ autoload_module.update_files = [
     "autoexec/elephant.be",
     "autoexec/handgame.be",
     "autoexec/handgame1.be",
-    "autoexec/handgamereader.be",
     "autoexec/sawbox.be",
     "autoexec/ballgame.be",
 ]
