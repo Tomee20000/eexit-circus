@@ -15,12 +15,12 @@ var OUT6 = 19
 
 #ser number
 var DRAWER = 1
-
-var BEEPER = 7
+var BEEPER = 0
+var SCREEN = 7
 
 var correct_code = "12345"
 
-class CashRegisterDriver
+class CashRegister
     var code, isButtonPushed, solved
 
     def init()
@@ -29,6 +29,8 @@ class CashRegisterDriver
         self.solved = false
 
         tasmota.set_power(BEEPER, false)
+        tasmota.set_power(DRAWER, true)
+        tasmota.set_power(SCREEN, true)
         tasmota.cmd("DisplayText[zr]")
     end
 
@@ -42,29 +44,28 @@ class CashRegisterDriver
 
     def beep()
         tasmota.set_power(BEEPER, true)
-        tasmota.set_timer(100,self.beep_off)
+        tasmota.set_timer(100, / -> self.beep_off())
     end
     
     def button_push(message)
         if !self.isButtonPushed
-            self.beep()
 
-            if size(self.code) < 5
+            if size(self.code) < 5 && message != "ENTER"
+                self.beep()
                 self.code += message
                 tasmota.cmd("DisplayText[zr]")
-                tasmota.cmd("DisplayText " + message)
+                tasmota.cmd("DisplayText " + self.code)
                 mqtt.publish("CASHREGISTER/KEYBOARD",self.code)
             end
 
-            if size(self.code) == 5 && message == "ENTER"
+            if message == "ENTER"
                 if self.code == correct_code
+                    self.beep()
                     tasmota.set_power(DRAWER, false)
                 else
-                    tasmota.set_timer(100,self.beep)
-                    tasmota.set_timer(200,self.beep)
-                    tasmota.set_timer(300,self.beep)
-                    tasmota.set_timer(400,self.beep)
-                    tasmota.set_timer(500,self.beep)
+                    tasmota.set_timer(100, / -> self.beep())
+                    tasmota.set_timer(600, / -> self.beep())
+                    tasmota.set_timer(1100, / -> self.beep())
                     tasmota.cmd("DisplayText[zr]")
                     self.code = ""
                 end
@@ -77,6 +78,7 @@ class CashRegisterDriver
 
         if self.solved
             return
+        end
 
         gpio.digital_write(OUT2, gpio.HIGH)
         gpio.digital_write(OUT3, gpio.LOW) 
@@ -139,8 +141,7 @@ class CashRegisterDriver
     end
 end
   
-d1 = CashRegisterDriver()
-
-tasmota.add_driver(d1)
+var cashregisterdriver = CashRegister()
+tasmota.add_driver(cashregisterdriver)
 
 print ("Cashregister driver loaded")
