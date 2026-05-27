@@ -18,20 +18,42 @@ var input4 = 13 #
 var input5 = 23 #
 var input6 = 22 #
 
-var color_map = ["FFFFFF","0D00FF","FF5F15","FF0000","004D1A","B10061"]
+var color_map = ["FF0000","FFFFFF","B10061","0D00FF","004D1A","FF5F15"]
 
 class Elephant
-    var current_color, last_input, enable
+    var current_color, last_input, enable, blink_current, solving_started, blink_round
+
+    def on_mqtt_message(topic, payload)
+        if topic == "CHANDGAME1" && self.enable
+            if !self.solving_started && payload == "000000"
+                    light.set({"power":false, "rgb":"FFFFFF"})
+                self.blink_round += 1
+            elif !self.solving_started
+                light.set({"power":true, "rgb":payload})
+            end
+            tasmota.cmd("State")
+        end
+    end
     
     def init()
         self.current_color = 0
-        self.last_input = 0
+        self.last_input = nil
         self.enable = false
-        light.set({"power":false, "rgb":[0]})
+        self.blink_current = 0
+        self.solving_started = false
+        self.blink_round = 0
+        light.set({"power":false, "rgb":"FFFFFF"})
+        tasmota.cmd("State")
+
+        mqtt.subscribe("CHANDGAME1", /t, idx, data, b -> self.on_mqtt_message(t, data))
+
     end
 
     def enable_game()
         self.enable = true
+        self.blink_current = 0
+        self.solving_started = false
+        self.blink_round = 0
         tasmota.resp_cmnd("Game enabled")
     end
 
@@ -48,25 +70,26 @@ class Elephant
     end
 
     def every_50ms()
-        if self.enable
-            if gpio.digital_read(input1)
-                self.current_color = 0
-            elif gpio.digital_read(input2)
-                self.current_color = 1
-            elif gpio.digital_read(input3)
-                self.current_color = 2
-            elif gpio.digital_read(input4)
-                self.current_color = 3
-            elif gpio.digital_read(input5)
-                self.current_color = 4
-            elif gpio.digital_read(input6)
-                self.current_color = 5
-            end
+        if gpio.digital_read(input1)
+            self.current_color = 0
+        elif gpio.digital_read(input2)
+            self.current_color = 1
+        elif gpio.digital_read(input3)
+            self.current_color = 2
+        elif gpio.digital_read(input4)
+            self.current_color = 3
+        elif gpio.digital_read(input5)
+            self.current_color = 4
+        elif gpio.digital_read(input6)
+            self.current_color = 5
+        end
 
-            if self.last_input != self.current_color
-                self.last_input = self.current_color
-                self.change_color()
-            end
+        if self.last_input == nil
+            self.last_input = self.current_color
+        elif self.last_input != self.current_color && self.enable && self.blink_round >= 1
+            self.last_input = self.current_color
+            self.change_color()
+            self.solving_started = true
         end
     end
 end

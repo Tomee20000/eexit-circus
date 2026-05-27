@@ -22,6 +22,7 @@ var autoload_files_for_topic = {
     "CBALLGAME5":"/autoexec/ballgame.be",
     "CBALLGAME6":"/autoexec/ballgame.be",
     "CSAWBOX":"/autoexec/sawbox.be",
+    "CCLOWNGAME":"/autoexec/clowngame.be",
 }
 
 import string

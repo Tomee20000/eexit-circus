@@ -136,7 +136,7 @@ class ClawMachineDriver
                 gpio.digital_write(MOTOR_FB1, gpio.LOW)
                 gpio.digital_write(MOTOR_FB2, gpio.LOW)
             #claw
-            elif !gpio.digital_read(JOY_BUTTON) && !gpio.digital_read(ENDSTOP_L) && !gpio.digital_read(ENDSTOP_F) && !self.in_claw_animation
+            elif !gpio.digital_read(JOY_BUTTON) && (!gpio.digital_read(ENDSTOP_L) || !gpio.digital_read(ENDSTOP_F)) && !self.in_claw_animation
                 print("claw animation started")
                 self.in_claw_animation = true
 
@@ -160,7 +160,7 @@ class ClawMachineDriver
                 tasmota.set_timer(6000, / -> self.claw_up())
 
                 #claw is up
-                tasmota.set_timer(12000, / -> self.claw_home())
+                tasmota.set_timer(13000, / -> self.claw_home())
             end
         end
 

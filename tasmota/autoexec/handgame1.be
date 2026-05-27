@@ -5,6 +5,7 @@
 #FF0000   (piros helyett narancsos vörös)
 #004D1A   (sötétzöld – eltolva, hogy ne keveredjen)
 #B10061   (lila / magenta – jól elkülönül)
+#000000   (fekete - szünet)
 
 light.set({"power":true, "rgb":"0000FF"})
 -#
@@ -16,9 +17,11 @@ var uid_map = {"F42A6E05": 1,"B357B303": 2, "3FF4F829": 3,"0D807606": 4}
 var color_map = ["FFFFFF","0D00FF","FF5F15","FF0000","004D1A","B10061"]
 
 class Handgame1
-    var enable, elephant_color, next_color, blink_current, blinking
+    var enable, elephant_color, next_color, blink_current, blinking, solving_started
 
     def game_solved_blink()
+        light.set({"power":false, "rgb":"008000"})
+        tasmota.delay(250)
         light.set({"power":true, "rgb":"008000"})
         tasmota.delay(250)
         light.set({"power":false, "rgb":"008000"})
@@ -38,34 +41,46 @@ class Handgame1
             if json.load(payload).find("Switch1", nil) == nil
                 return nil
             else
-                print(self.elephant_color)
-                print(self.next_color)
-                print(color_map[self.next_color])
                 if self.elephant_color == color_map[self.next_color] && self.next_color < 6
-                    self.blinking = false
+                    self.solving_started = true
                     self.next_color += 1
+
+                    light.set({"power":false, "rgb":self.elephant_color})
+                    tasmota.delay(250)
+                    light.set({"power":true, "rgb":self.elephant_color})
+                    tasmota.delay(250)
+                    light.set({"power":false, "rgb":self.elephant_color})
+                    tasmota.delay(250)
+                    light.set({"power":true, "rgb":self.elephant_color})
+                    tasmota.delay(250)
+                    light.set({"power":false, "rgb":self.elephant_color})
+                    tasmota.delay(250)
                     light.set({"power":true, "rgb":self.elephant_color})
                     tasmota.cmd("State")
                 elif self.elephant_color != color_map[self.next_color] && self.next_color < 6
-                    if !self.blinking
+                    if self.solving_started
                         light.set({"power":false, "rgb":color_map[0]})
                         tasmota.cmd("State")
                         self.elephant_color = nil
                         self.next_color = 0
                         self.blink_current = 0
-                        self.blinking = true
+                        self.solving_started = false
                     end
                 end
 
                 if self.next_color == 6
                     print("Game solved")
                     self.enable = false
-                    self.blinking = false
+                    self.solving_started = false
                     tasmota.set_timer(1000, / -> self.game_solved_blink())
                 end
             end
         elif topic == "CELEPHANT"
             self.elephant_color = payload
+            if self.solving_started
+                light.set({"power":true, "rgb":self.elephant_color})
+                tasmota.cmd("State")
+            end
         end
     end
 
@@ -78,12 +93,12 @@ class Handgame1
         self.elephant_color = nil
         self.next_color = 0
         self.blink_current = 0
-        self.blinking = false
+        self.solving_started = false
     end
 
     def enable_game()
         self.enable = true
-        self.blinking = true
+        self.solving_started = false
         self.elephant_color = nil
         self.next_color = 0
         self.blink_current = 0
@@ -92,36 +107,33 @@ class Handgame1
 
     def disable_game()
         self.enable = false
-        self.blinking = false
         light.set({"power":false, "rgb":"FFFFFF"})
         tasmota.cmd("State")
         tasmota.resp_cmnd("Game disabled")
     end
 
     def every_second()
-        if self.blinking
-
+        if !self.solving_started && self.enable
             if self.blink_current < 6
+                mqtt.publish(tasmota.cmd("Topic")["Topic"], color_map[self.blink_current])
                 light.set({"power":true, "rgb":color_map[self.blink_current]})
-                tasmota.cmd("State")
                 self.blink_current += 1
             else    
                 self.blink_current = 0
+                mqtt.publish(tasmota.cmd("Topic")["Topic"], "000000")
                 light.set({"power":false, "rgb":color_map[self.blink_current]})
             end
+            tasmota.cmd("State")
         end
-    end
-
-    def every_50ms()
-        
     end
 end
 
 var handgamedriver = Handgame1()
 var handgamereaderdriver = Handgamereader()
 
-tasmota.add_driver(handgamedriver)
 tasmota.add_driver(handgamereaderdriver)
+tasmota.add_driver(handgamedriver)
+
 
 tasmota.add_cmd("enable", / -> handgamedriver.enable_game())
 tasmota.add_cmd("disable", / -> handgamedriver.disable_game())
