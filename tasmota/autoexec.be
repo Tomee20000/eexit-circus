@@ -23,6 +23,7 @@ var autoload_files_for_topic = {
     "CBALLGAME6":"/autoexec/ballgame.be",
     "CSAWBOX":"/autoexec/sawbox.be",
     "CCLOWNGAME":"/autoexec/clowngame.be",
+    "CLASERGUN":"/autoexec/lasergun.be",
 }
 
 import string

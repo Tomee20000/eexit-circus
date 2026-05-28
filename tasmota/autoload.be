@@ -25,6 +25,7 @@ autoload_module.update_files = [
     "autoexec/sawbox.be",
     "autoexec/ballgame.be",
     "autoexec/clowngame.be",
+    "autoexec/lasergun.be",
 ]
 
 autoload_module.lib_files = [
