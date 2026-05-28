@@ -1,9 +1,12 @@
-var LED0 = 23
-var LED1 = 22
-var LED2 = 21
-var LED3 = 19
-var LED4 = 18
-var LED5 = 17
+#serial
+var LED0 = 3
+var LED1 = 4
+var LED2 = 5
+var LED3 = 6
+var LED4 = 7
+var LED5 = 8
+
+#GPIO
 var LASER = 25
 
 var MOTOR1 = 32
@@ -12,12 +15,19 @@ var MOTOR2 = 33
 var CONNECTED = 36
 var TRIGGER = 39
 
+var round_per_led = 20
+var max_bicycle = 100
+
 class Lasergun
     var enable, bicycle_counter
 
     def on_mqtt_message(topic, payload)
         if topic == "CLASERGUN/BCOUNTER"
-            self.bicycle_counter = number(payload)
+            self.bicycle_counter += number(payload)
+
+            for i: 3..(self.bicycle_counter / round_per_led)
+                tasmota.set_power(i,true)
+            end
         end
     end
 
@@ -35,7 +45,7 @@ class Lasergun
     def disable_game()
         self.enable = false
         tasmota.resp_cmnd("Game disabled")
-    endy
+    end
 
     def every_50ms()
         if self.enable
