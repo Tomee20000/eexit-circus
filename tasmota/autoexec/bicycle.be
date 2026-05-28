@@ -20,7 +20,7 @@ class Bicycle
             self.counter = self.counter + 1 
             self.counted = true
 
-            print("Counter: " .. self.counter)
+            mqtt.publish("CLASERGUN/BCOUNTER",self.counter)
         end
 
         if gpio.digital_read(BICYCLE) && self.counted
