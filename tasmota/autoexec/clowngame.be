@@ -196,7 +196,7 @@ class Clowngame
         self.show_solved()
         gpio.set_pwm(eye, (n % 2 == 0) ? BRIGHTNESS : 0)
 
-        tasmota.set_timer(BLINK_MS, /-> self._blink_step(eye, n + 1, count, mode, id))
+        tasmota.set_timer(BLINK_MS, / -> self._blink_step(eye, n + 1, count, mode, id))
     end
 
     def show_solved()
@@ -225,7 +225,7 @@ class Clowngame
         self.blink_id = self.blink_id + 1
         self.all_off()
         self.read_inputs()
-        tasmota.set_timer(BLINK_MS, /-> self.win_blink(0, self.blink_id))
+        tasmota.set_timer(BLINK_MS, / -> self.win_blink(0, self.blink_id))
     end
 
     def win_blink(n, id)
@@ -246,7 +246,7 @@ class Clowngame
             gpio.set_pwm(self.eyes[i], v)
         end
 
-        tasmota.set_timer(BLINK_MS, /-> self.win_blink(n + 1, id))
+        tasmota.set_timer(BLINK_MS, / -> self.win_blink(n + 1, id))
     end
 
     def all_off()
@@ -280,8 +280,8 @@ end
 var clowngamedriver = Clowngame()
 tasmota.add_driver(clowngamedriver)
 
-tasmota.add_cmd("enable", /-> clowngamedriver.enable_game())
-tasmota.add_cmd("disable", /-> clowngamedriver.disable_game())
+tasmota.add_cmd("enable", / -> clowngamedriver.enable_game())
+tasmota.add_cmd("disable", / -> clowngamedriver.disable_game())
 
 print("Clowngame driver loaded")
 print("--------------------------------------------------------------")

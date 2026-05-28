@@ -1,5 +1,3 @@
-#TODO coin érzékelés
-
 var MOTOR_FB1 = 23
 var MOTOR_FB2 = 22
 var MOTOR_LR2 = 21
@@ -28,7 +26,7 @@ gpio.digital_write(MOTOR_CLAW1, gpio.LOW)
 gpio.digital_write(MOTOR_CLAW2, gpio.LOW)
 gpio.digital_write(CLAW, gpio.LOW)
 
-class ClawMachineDriver
+class ClawMachine
     var motor_lr_state, motor_fb_state, motor_claw_state, in_claw_animation, is_full_left, is_full_front, is_coin_inserted
     #- state
         0 - stop
@@ -38,7 +36,7 @@ class ClawMachineDriver
 
     def fast_loop()
         if !gpio.digital_read(COIN) && !self.is_coin_inserted
-            self.enableGame()
+            self.enable_game()
         end
     end
 
@@ -50,15 +48,15 @@ class ClawMachineDriver
         self.is_full_left = false
         self.is_full_front = false
         self.is_coin_inserted = false
-        tasmota.add_fast_loop(/-> self.fast_loop())
+        tasmota.add_fast_loop(/ -> self.fast_loop())
     end
 
-    def enableGame()
+    def enable_game()
         self.is_coin_inserted = true
         tasmota.resp_cmnd("Game enabled")
     end
 
-    def disableGame()
+    def disable_game()
         self.is_coin_inserted = false
         tasmota.resp_cmnd("Game disabled")
     end
@@ -207,11 +205,16 @@ class ClawMachineDriver
     end
 end
   
-var clawmachine = ClawMachineDriver()
+var claw_machine_driver = ClawMachine()
 
-tasmota.add_driver(clawmachine)
+tasmota.add_driver(claw_machine_driver)
 
-print ("Clawmachine driver loaded")
+tasmota.add_cmd("enable", / -> claw_machine_driver.enable_game())
+tasmota.add_cmd("disable", / -> claw_machine_driver.disable_game())
 
-tasmota.add_cmd("enable", / -> clawmachine.enableGame())
-tasmota.add_cmd("disable", / -> clawmachine.disableGame())
+print("ClawMachine driver loaded")
+print("--------------------------------------------------------------")
+print("Commands:")
+print("enable - game enabled")
+print("disable - game disabled")
+print("--------------------------------------------------------------")

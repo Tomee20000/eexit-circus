@@ -1,7 +1,4 @@
-#releket configolni kell, switcheket switch_d-re kell configolni
-
 import mqtt
-#gpio
 var IN1 = 26
 var IN2 = 27
 var IN3 = 14
@@ -13,19 +10,18 @@ var OUT2 = 22
 var OUT3 = 21
 var OUT6 = 19
 
-#ser number
 var DRAWER = 1
 var BEEPER = 0
 var SCREEN = 7
 
-var correct_code = "12345"
+var CORRECT_CODE = "12345"
 
 class CashRegister
-    var code, isButtonPushed, solved
+    var code, button_pressed, solved
 
     def init()
         self.code = "" 
-        self.isButtonPushed = false
+        self.button_pressed = false
         self.solved = false
 
         tasmota.set_power(BEEPER, false)
@@ -48,18 +44,18 @@ class CashRegister
     end
     
     def button_push(message)
-        if !self.isButtonPushed
+        if !self.button_pressed
 
             if size(self.code) < 5 && message != "ENTER"
                 self.beep()
                 self.code += message
                 tasmota.cmd("DisplayText[zr]")
                 tasmota.cmd("DisplayText " + self.code)
-                mqtt.publish("CASHREGISTER/KEYBOARD",self.code)
+                mqtt.publish("CASHREGISTER/KEYBOARD", self.code)
             end
 
             if message == "ENTER"
-                if self.code == correct_code
+                if self.code == CORRECT_CODE
                     self.beep()
                     tasmota.set_power(DRAWER, false)
                 else
@@ -71,7 +67,7 @@ class CashRegister
                 end
             end
         end
-        self.isButtonPushed = true
+        self.button_pressed = true
     end
 
     def every_50ms()
@@ -137,11 +133,11 @@ class CashRegister
             return
         end
 
-        self.isButtonPushed = false
+        self.button_pressed = false
     end
 end
   
-var cashregisterdriver = CashRegister()
-tasmota.add_driver(cashregisterdriver)
+var cash_register_driver = CashRegister()
+tasmota.add_driver(cash_register_driver)
 
-print ("Cashregister driver loaded")
+print("CashRegister driver loaded")

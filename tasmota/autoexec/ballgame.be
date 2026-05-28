@@ -2,7 +2,7 @@ import mqtt
 import json
 
 class BallGame
-    var timer, sent_timeout, topic
+    var timeout_seconds, timeout_sent, topic
 
     def on_mqtt_message(topic, payload)
         if topic == "tele/" .. self.topic .. "/SENSOR"
@@ -18,29 +18,29 @@ class BallGame
             end
 
             mqtt.publish(self.topic .. "/BALL", str(data))
-            self.timer = 0
-            self.sent_timeout = false
+            self.timeout_seconds = 0
+            self.timeout_sent = false
         end
     end
 
     def init()
         self.topic = tasmota.cmd("Topic")["Topic"]
-        self.timer = 0
-        self.sent_timeout = false
+        self.timeout_seconds = 0
+        self.timeout_sent = false
         mqtt.subscribe("tele/" .. self.topic .. "/SENSOR", /t, idx, data, b -> self.on_mqtt_message(t, data))
         mqtt.publish(self.topic .. "/BALL", "-")
     end
 
     def every_second()
-        self.timer = self.timer + 1
-        if self.timer > 5 && !self.sent_timeout
+        self.timeout_seconds = self.timeout_seconds + 1
+        if self.timeout_seconds > 5 && !self.timeout_sent
             mqtt.publish(self.topic .. "/BALL", "-")
-            self.sent_timeout = true
+            self.timeout_sent = true
         end
     end
 end
 
-var ballgamedriver = BallGame()
-tasmota.add_driver(ballgamedriver)
+var ball_game_driver = BallGame()
+tasmota.add_driver(ball_game_driver)
 
-print("Ballgame driver loaded")
+print("BallGame driver loaded")

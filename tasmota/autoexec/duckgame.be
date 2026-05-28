@@ -127,7 +127,7 @@ class WaveDriver
         self.strip.clear()
         self.strip.show()
 
-        tasmota.add_fast_loop(/-> self.fast_loop())
+        tasmota.add_fast_loop(/ -> self.fast_loop())
     end
 
     def fast_loop()

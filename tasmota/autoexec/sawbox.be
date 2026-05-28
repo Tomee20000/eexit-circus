@@ -1,4 +1,4 @@
-var SAW = 33
+var SAW_PIN = 33
 
 var OUT1 = 0
 
@@ -16,10 +16,10 @@ class SawBox
         self.strip = Leds(self.led_count, gpio.pin(gpio.WS2812, 3))
         self.strip.clear()
 
-        tasmota.add_fast_loop(/-> self.fast_loop())
+        tasmota.add_fast_loop(/ -> self.fast_loop())
     end
 
-    def initGame() #for command
+    def init_game()
         self.counter = 0
         self.saw_in = false
         self.strip.clear()
@@ -28,12 +28,12 @@ class SawBox
     end
 
     def fast_loop()
-        if !gpio.digital_read(SAW) && !self.saw_in
+        if !gpio.digital_read(SAW_PIN) && !self.saw_in
             self.counter = self.counter + 1 
             self.saw_in = true
         end
 
-        if gpio.digital_read(SAW) && self.saw_in
+        if gpio.digital_read(SAW_PIN) && self.saw_in
             self.saw_in = false
         end
     end
@@ -59,10 +59,10 @@ class SawBox
     end
 end
 
-var sawboxdriver = SawBox()
-tasmota.add_driver(sawboxdriver)
+var saw_box_driver = SawBox()
+tasmota.add_driver(saw_box_driver)
 
-tasmota.add_cmd("init", /cmd, idx -> sawboxdriver.initGame())
+tasmota.add_cmd("init", /cmd, idx -> saw_box_driver.init_game())
 
 print("SawBox driver loaded")
 print("--------------------------------------------------------------")

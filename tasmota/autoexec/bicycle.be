@@ -1,4 +1,6 @@
-var BICYCLE = 1
+import mqtt
+
+var BICYCLE_PIN = 1
 
 class Bicycle
     var counter, counted, last_count_time
@@ -7,10 +9,10 @@ class Bicycle
         self.counter = 0
         self.counted = false
         self.last_count_time = 0
-        tasmota.add_fast_loop(/-> self.fast_loop())
+        tasmota.add_fast_loop(/ -> self.fast_loop())
     end
 
-    def initGame() #for command
+    def init_game()
         self.counter = 0
         self.counted = false
         self.last_count_time = 0
@@ -26,7 +28,7 @@ class Bicycle
             self.last_count_time = 0
         end
 
-        if !gpio.digital_read(BICYCLE) && !self.counted
+        if !gpio.digital_read(BICYCLE_PIN) && !self.counted
             self.counter = self.counter + 1
             self.counted = true
             self.last_count_time = now
@@ -38,16 +40,16 @@ class Bicycle
             end
         end
 
-        if gpio.digital_read(BICYCLE) && self.counted
+        if gpio.digital_read(BICYCLE_PIN) && self.counted
             self.counted = false
         end
     end
 end
 
-var bicycledriver = Bicycle()
-tasmota.add_driver(bicycledriver)
+var bicycle_driver = Bicycle()
+tasmota.add_driver(bicycle_driver)
 
-tasmota.add_cmd("init", /cmd, idx -> bicycledriver.initGame())
+tasmota.add_cmd("init", /cmd, idx -> bicycle_driver.init_game())
 
 print("Bicycle driver loaded")
 print("--------------------------------------------------------------")

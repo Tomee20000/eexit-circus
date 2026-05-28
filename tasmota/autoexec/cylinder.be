@@ -326,15 +326,22 @@ class CylinderDriver
     end
 end
 
-var cylinderdriver = CylinderDriver()
+var cylinder_driver = CylinderDriver()
 
-tasmota.add_driver(cylinderdriver)
+tasmota.add_driver(cylinder_driver)
 
-tasmota.add_cmd("lock", /cmd, idx -> cylinderdriver.lock(cmd, idx))
-tasmota.add_cmd("unlock", /cmd, idx -> cylinderdriver.unlock(cmd, idx))
-tasmota.add_cmd("home", /cmd, idx -> cylinderdriver.home(cmd, idx))
-tasmota.add_cmd("pos", /cmd, i, position -> cylinderdriver.set_pos(cmd, i, number(position)))
-tasmota.add_cmd("movestep", /cmd, i, steps -> cylinderdriver.move_steps(cmd, i, number(steps)))
+tasmota.add_cmd("lock", /cmd, idx -> cylinder_driver.lock(cmd, idx))
+tasmota.add_cmd("unlock", /cmd, idx -> cylinder_driver.unlock(cmd, idx))
+tasmota.add_cmd("home", /cmd, idx -> cylinder_driver.home(cmd, idx))
+tasmota.add_cmd("pos", /cmd, i, position -> cylinder_driver.set_pos(cmd, i, number(position)))
+tasmota.add_cmd("movestep", /cmd, i, steps -> cylinder_driver.move_steps(cmd, i, number(steps)))
 
 print("Cylinder driver loaded")
-print("Commands: lock, unlock, home, pos <0-4>, movestep <steps>")
+print("--------------------------------------------------------------")
+print("Commands:")
+print("lock - lock cylinder")
+print("unlock - unlock cylinder")
+print("home - start homing")
+print("pos <0-4> - move cylinder to saved position")
+print("movestep <steps> - move cylinder by relative steps")
+print("--------------------------------------------------------------")

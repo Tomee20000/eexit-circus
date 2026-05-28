@@ -1,4 +1,5 @@
 import gpio
+import mqtt
 
 # =========================================================
 # CONFIG
@@ -25,7 +26,7 @@ var FORWARD2_MS = 35
 # =========================================================
 # LASERGUN DRIVER
 # =========================================================
-class Lasergun
+class LaserGun
 
     var enable, charge, last_msg, trigger_lock, decay, infinite
     var shot_phase, phase_start, led_update
@@ -120,7 +121,7 @@ class Lasergun
 
     def init()
         mqtt.subscribe("CLASERGUN/BCOUNTER", /t, idx, data, b -> self.on_mqtt_message(t, data))
-        tasmota.add_fast_loop(/-> self.fast_loop())
+        tasmota.add_fast_loop(/ -> self.fast_loop())
 
         self.enable = true
         self.charge = 0
@@ -248,27 +249,27 @@ end
 # =========================================================
 # INIT
 # =========================================================
-var lasergundriver = Lasergun()
-tasmota.add_driver(lasergundriver)
+var laser_gun_driver = LaserGun()
+tasmota.add_driver(laser_gun_driver)
 
 
 # =========================================================
 # COMMANDS
 # =========================================================
-tasmota.add_cmd("enable", /-> lasergundriver.enable_game())
-tasmota.add_cmd("disable", /-> lasergundriver.disable_game())
+tasmota.add_cmd("enable", / -> laser_gun_driver.enable_game())
+tasmota.add_cmd("disable", / -> laser_gun_driver.disable_game())
 
-tasmota.add_cmd("decayon", /-> lasergundriver.decay_on())
-tasmota.add_cmd("decayoff", /-> lasergundriver.decay_off())
+tasmota.add_cmd("decayon", / -> laser_gun_driver.decay_on())
+tasmota.add_cmd("decayoff", / -> laser_gun_driver.decay_off())
 
-tasmota.add_cmd("infiniteon", /-> lasergundriver.infinite_on())
-tasmota.add_cmd("infiniteoff", /-> lasergundriver.infinite_off())
+tasmota.add_cmd("infiniteon", / -> laser_gun_driver.infinite_on())
+tasmota.add_cmd("infiniteoff", / -> laser_gun_driver.infinite_off())
 
 
 # =========================================================
 # HELP / INFO
 # =========================================================
-print("Lasergun driver loaded")
+print("LaserGun driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")

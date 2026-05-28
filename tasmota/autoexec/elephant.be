@@ -11,14 +11,14 @@ light.set({"power":true, "rgb":"0000FF"})
 
 import mqtt
 
-var input1 = 26 #
-var input2 = 27 #
-var input3 = 14 #
-var input4 = 13 #
-var input5 = 23 #
-var input6 = 22 #
+var INPUT1 = 26 #
+var INPUT2 = 27 #
+var INPUT3 = 14 #
+var INPUT4 = 13 #
+var INPUT5 = 23 #
+var INPUT6 = 22 #
 
-var color_map = ["FF0000","FFFFFF","B10061","0D00FF","004D1A","FF5F15"]
+var COLOR_MAP = ["FF0000","FFFFFF","B10061","0D00FF","004D1A","FF5F15"]
 
 class Elephant
     var current_color, last_input, enable, blink_current, solving_started, blink_round
@@ -64,23 +64,23 @@ class Elephant
     end
 
     def change_color() 
-        light.set({"power":true, "rgb":color_map[self.current_color]})
-        mqtt.publish(tasmota.cmd("Topic")["Topic"], color_map[self.current_color])
+        light.set({"power":true, "rgb":COLOR_MAP[self.current_color]})
+        mqtt.publish(tasmota.cmd("Topic")["Topic"], COLOR_MAP[self.current_color])
         tasmota.cmd("State")
     end
 
     def every_50ms()
-        if gpio.digital_read(input1)
+        if gpio.digital_read(INPUT1)
             self.current_color = 0
-        elif gpio.digital_read(input2)
+        elif gpio.digital_read(INPUT2)
             self.current_color = 1
-        elif gpio.digital_read(input3)
+        elif gpio.digital_read(INPUT3)
             self.current_color = 2
-        elif gpio.digital_read(input4)
+        elif gpio.digital_read(INPUT4)
             self.current_color = 3
-        elif gpio.digital_read(input5)
+        elif gpio.digital_read(INPUT5)
             self.current_color = 4
-        elif gpio.digital_read(input6)
+        elif gpio.digital_read(INPUT6)
             self.current_color = 5
         end
 
@@ -95,12 +95,12 @@ class Elephant
 end
 
 
-var elephantdriver = Elephant()
+var elephant_driver = Elephant()
 
-tasmota.add_driver(elephantdriver)
+tasmota.add_driver(elephant_driver)
 
-tasmota.add_cmd("enable", / -> elephantdriver.enable_game())
-tasmota.add_cmd("disable", / -> elephantdriver.disable_game())
+tasmota.add_cmd("enable", / -> elephant_driver.enable_game())
+tasmota.add_cmd("disable", / -> elephant_driver.disable_game())
 
 print("Elephant driver loaded")
 print("--------------------------------------------------------------")

@@ -1,19 +1,15 @@
-#-
-
--#
-
 import math
 
-var red = 0xFF0000
-var green = 0x027821
-var blue = 0x0000FF
-var yellow = 0xFFFF00
-var white = 0xFFFFFF
+var RED = 0xFF0000
+var GREEN = 0x027821
+var BLUE = 0x0000FF
+var YELLOW = 0xFFFF00
+var WHITE = 0xFFFFFF
 
-var redwgamma = 16711680    #bal
-var greenwgamma = 65280     #jobb
-var bluewgamma = 255        #lent
-var yellowwgamma = 16776960 #fent
+var RED_GAMMA = 16711680    #bal
+var GREEN_GAMMA = 65280     #jobb
+var BLUE_GAMMA = 255        #lent
+var YELLOW_GAMMA = 16776960 #fent
 
 var HOLE1 = 19
 var HOLE2 = 14
@@ -25,8 +21,8 @@ var HOLE7 = 22
 var HOLE8 = 18
 var HOLE9 = 27
 
-var led_map = {1 : [0,7,8,9],2 : [1,5,6,7],3 : [2,3,4,5],4 : [8,12,11,10],5 : [6,14,13,12],6 : [4,16,15,14],7 : [11,21,22,23],8 : [13,19,20,21],9 : [15,17,18,19]}
-var led_solution = {redwgamma : [0,1,2], greenwgamma : [22,20,18], bluewgamma : [3,16,17], yellowwgamma : [9,10,23]}
+var LED_MAP = {1 : [0,7,8,9],2 : [1,5,6,7],3 : [2,3,4,5],4 : [8,12,11,10],5 : [6,14,13,12],6 : [4,16,15,14],7 : [11,21,22,23],8 : [13,19,20,21],9 : [15,17,18,19]}
+var LED_SOLUTION = {RED_GAMMA : [0,1,2], GREEN_GAMMA : [22,20,18], BLUE_GAMMA : [3,16,17], YELLOW_GAMMA : [9,10,23]}
 
 class KnifeGame
     var strip, color_map, rnd, hole1, hole2, hole3, hole4, hole5, hole6, hole7, hole8, hole9, enable, stable_cnt, last_input, triggered
@@ -72,10 +68,10 @@ class KnifeGame
 
     def color_init()        
         for i: 0..5
-            self.strip.set_pixel_color(self.color_map[i],red,255)
-            self.strip.set_pixel_color(self.color_map[i+6],yellow,255)
-            self.strip.set_pixel_color(self.color_map[i+12],blue,255)
-            self.strip.set_pixel_color(self.color_map[i+18],green,255)
+            self.strip.set_pixel_color(self.color_map[i], RED, 255)
+            self.strip.set_pixel_color(self.color_map[i + 6], YELLOW, 255)
+            self.strip.set_pixel_color(self.color_map[i + 12], BLUE, 255)
+            self.strip.set_pixel_color(self.color_map[i + 18], GREEN, 255)
         end
         
         self.strip.show()
@@ -86,14 +82,14 @@ class KnifeGame
 
     def color_init_rnd()
         for i: 0..self.strip.pixel_count()-1
-            self.strip.set_pixel_color(i,white,255)    
+            self.strip.set_pixel_color(i,WHITE,255)    
         end
         
         for i: 0..2
-            self.strip.set_pixel_color(self.rnd[i],red,255)
-            self.strip.set_pixel_color(self.rnd[i+3],yellow,255)
-            self.strip.set_pixel_color(self.rnd[i+6],blue,255)
-            self.strip.set_pixel_color(self.rnd[i+9],green,255)
+            self.strip.set_pixel_color(self.rnd[i], RED, 255)
+            self.strip.set_pixel_color(self.rnd[i + 3], YELLOW, 255)
+            self.strip.set_pixel_color(self.rnd[i + 6], BLUE, 255)
+            self.strip.set_pixel_color(self.rnd[i + 9], GREEN, 255)
         end
         
         self.strip.show()
@@ -106,10 +102,10 @@ class KnifeGame
         var buf = self.strip.pixels_buffer()
         var ps = self.strip.pixel_size()
 
-        var ia = led_map[idx][0] * ps
-        var ib = led_map[idx][1] * ps
-        var ic = led_map[idx][2] * ps
-        var id = led_map[idx][3] * ps
+        var ia = LED_MAP[idx][0] * ps
+        var ib = LED_MAP[idx][1] * ps
+        var ic = LED_MAP[idx][2] * ps
+        var id = LED_MAP[idx][3] * ps
 
         var tmp = [0,0,0]
 
@@ -124,16 +120,16 @@ class KnifeGame
         self.strip.dirty()
         self.strip.show()
 
-        tasmota.resp_cmnd("Block " .. idx .. "rotated (reverse).")
+        tasmota.resp_cmnd("Block " .. idx .. " rotated (reverse).")
     end
 
     def solution_check()
         var solved = true
         for i:0..2
-            solved = solved && self.strip.get_pixel_color(led_solution[redwgamma][i]) == redwgamma
-            solved = solved && self.strip.get_pixel_color(led_solution[greenwgamma][i]) == greenwgamma
-            solved = solved && self.strip.get_pixel_color(led_solution[bluewgamma][i]) == bluewgamma
-            solved = solved && self.strip.get_pixel_color(led_solution[yellowwgamma][i]) == yellowwgamma
+            solved = solved && self.strip.get_pixel_color(LED_SOLUTION[RED_GAMMA][i]) == RED_GAMMA
+            solved = solved && self.strip.get_pixel_color(LED_SOLUTION[GREEN_GAMMA][i]) == GREEN_GAMMA
+            solved = solved && self.strip.get_pixel_color(LED_SOLUTION[BLUE_GAMMA][i]) == BLUE_GAMMA
+            solved = solved && self.strip.get_pixel_color(LED_SOLUTION[YELLOW_GAMMA][i]) == YELLOW_GAMMA
         end
 
         return solved
@@ -197,22 +193,22 @@ class KnifeGame
 end
 
 
-var knifegamedriver = KnifeGame()
+var knife_game_driver = KnifeGame()
 
-tasmota.add_driver(knifegamedriver)
+tasmota.add_driver(knife_game_driver)
 
-tasmota.add_cmd("enable", / -> knifegamedriver.enable_game())
-tasmota.add_cmd("init", / -> knifegamedriver.color_init())
-tasmota.add_cmd("rndinit", / -> knifegamedriver.color_init_rnd())
-tasmota.add_cmd("off", / -> knifegamedriver.led_off())
-tasmota.add_cmd("rotate", /cmd, i, idx -> knifegamedriver.rotate(number(idx)))
+tasmota.add_cmd("enable", / -> knife_game_driver.enable_game())
+tasmota.add_cmd("init", / -> knife_game_driver.color_init())
+tasmota.add_cmd("rndinit", / -> knife_game_driver.color_init_rnd())
+tasmota.add_cmd("off", / -> knife_game_driver.led_off())
+tasmota.add_cmd("rotate", /cmd, i, idx -> knife_game_driver.rotate(number(idx)))
 
 print("KnifeGame driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
 print("off - led off")
-print("init - initialize the colors, no white")
-print("rndinit - initialize the colors, with white, random order")
+print("init - initialize the colors, no WHITE")
+print("rndinit - initialize the colors, with WHITE, random order")
 print("rotate <n> - rotates the <n> block")
 print("--------------------------------------------------------------")
