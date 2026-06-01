@@ -13,8 +13,13 @@ var LED_COUNT = 46
 
 var LDR_PINS = [27, 14, 13, 23]
 var LDR_ACTIVE_LOW = true
+var LDR_USE_PULLUP = false
 
-var ANIM_SKIP = 5
+var LDR_REARM_MS = 80
+var LDR_LOCK_MS = 250
+
+var ANIM_INTERVAL_MS = 40
+var BLINK_INTERVAL_MS = 250
 var SHOT_TIME = 5000
 
 var WAVE_SPEED = 0.15
@@ -103,80 +108,116 @@ end
 
 
 # =========================================================
-# WAVE DRIVER
+# WAVE / LDR DRIVER
 # =========================================================
 class WaveDriver
 
     var time, strip
     var enabled, blink_state
-    var loop_counter, anim_counter
-    var duck_anim
-    var ldr_last
+    var duck_anim, duck_red
+    var next_anim_ms, next_blink_ms
+    var ldr_latched, ldr_off_since, ldr_lock_until
+    var ldr_debug
 
     def init()
         self.time = 0
         self.enabled = false
         self.blink_state = false
-        self.loop_counter = 0
-        self.anim_counter = 0
+        self.next_anim_ms = 0
+        self.next_blink_ms = 0
 
         self.duck_anim = [false, false, false, false]
-        self.ldr_last = [false, false, false, false]
+        self.duck_red = [false, false, false, false]
+
+        self.ldr_latched = [false, false, false, false]
+        self.ldr_off_since = [0, 0, 0, 0]
+        self.ldr_lock_until = [0, 0, 0, 0]
+        self.ldr_debug = [false, false, false, false]
+
+        for i: 0..3
+            if LDR_USE_PULLUP
+                gpio.pin_mode(LDR_PINS[i], gpio.INPUT_PULLUP)
+            else
+                gpio.pin_mode(LDR_PINS[i], gpio.INPUT)
+            end
+        end
 
         self.strip = Leds(LED_COUNT, gpio.pin(gpio.WS2812, WS2812_PIN))
         self.strip.clear()
         self.strip.show()
 
-        tasmota.add_fast_loop(/ -> self.fast_loop())
+        tasmota.add_fast_loop(/ -> self.ldr_loop())
+        tasmota.add_fast_loop(/ -> self.anim_loop())
     end
 
-    def fast_loop()
-        self.read_ldr()
+    def read_ldr_pin(i)
+        var hit = gpio.digital_read(LDR_PINS[i])
 
-        if self.enabled
-            self.anim_counter += 1
+        if LDR_ACTIVE_LOW
+            hit = !hit
+        end
 
-            if self.anim_counter >= ANIM_SKIP
-                self.anim_counter = 0
-                self.sea_wave()
-                self.loop_counter += 1
+        return hit
+    end
 
-                if self.loop_counter >= 10
-                    self.loop_counter = 0
+    def ldr_loop()
+        var now = tasmota.millis()
+
+        for i: 0..3
+            var hit = self.read_ldr_pin(i)
+            self.ldr_debug[i] = hit
+
+            if hit
+                self.ldr_off_since[i] = 0
+
+                if !self.ldr_latched[i] && now >= self.ldr_lock_until[i]
+                    self.ldr_latched[i] = true
+                    self.ldr_lock_until[i] = now + LDR_LOCK_MS
+                    self.shoot_fast(i + 1)
+                end
+
+            else
+                if self.ldr_off_since[i] == 0
+                    self.ldr_off_since[i] = now
+                end
+
+                if self.ldr_latched[i] && now - self.ldr_off_since[i] >= LDR_REARM_MS
+                    self.ldr_latched[i] = false
                 end
             end
         end
     end
 
-    def read_ldr()
-        for i: 0..3
-            var hit = gpio.digital_read(LDR_PINS[i])
-
-            if LDR_ACTIVE_LOW
-                hit = !hit
-            end
-
-            if hit && !self.ldr_last[i]
-                self.shoot_fast(i + 1)
-            end
-
-            self.ldr_last[i] = hit
+    def anim_loop()
+        if !self.enabled
+            return
         end
+
+        var now = tasmota.millis()
+
+        if now < self.next_anim_ms
+            return
+        end
+
+        self.next_anim_ms = now + ANIM_INTERVAL_MS
+
+        self.ldr_loop()
+        self.sea_wave()
+        self.ldr_loop()
     end
 
     def rgb(r, g, b)
         return (r << 16) | (g << 8) | b
     end
 
-    def set_duck_pixel(duck_id, index, color)
-        if self.blink_state
-            self.strip.set_pixel_color(duck_led_map[duck_id][index], color, 255)
-        else
-            self.strip.set_pixel_color(duck_led_map[duck_id][index], color, 0)
+    def set_duck_pixels(duck_id, color, brightness)
+        for i: 0..(duck_led_map[duck_id].size() - 1)
+            self.strip.set_pixel_color(duck_led_map[duck_id][i], color, brightness)
         end
     end
 
     def sea_wave()
+        var now = tasmota.millis()
         var red_color = self.rgb(255, 0, 0)
 
         for i: 0..(LED_COUNT - 1)
@@ -192,14 +233,21 @@ class WaveDriver
         end
 
         for duck_id: 1..4
+            if self.duck_red[duck_id - 1]
+                self.set_duck_pixels(duck_id, red_color, 255)
+            end
+
             if self.duck_anim[duck_id - 1]
-                for i: 0..(duck_led_map[duck_id].size() - 1)
-                    self.set_duck_pixel(duck_id, i, red_color)
+                if self.blink_state
+                    self.set_duck_pixels(duck_id, red_color, 255)
+                else
+                    self.set_duck_pixels(duck_id, red_color, 0)
                 end
             end
         end
 
-        if self.loop_counter % 10 == 0
+        if now >= self.next_blink_ms
+            self.next_blink_ms = now + BLINK_INTERVAL_MS
             self.blink_state = !self.blink_state
         end
 
@@ -209,27 +257,39 @@ class WaveDriver
 
     def enable_game()
         self.enabled = true
+        self.next_anim_ms = 0
+        self.next_blink_ms = 0
         tasmota.resp_cmnd("Led enabled")
     end
 
     def disable_game()
         self.enabled = false
         self.duck_anim = [false, false, false, false]
+        self.duck_red = [false, false, false, false]
         self.strip.clear()
         self.strip.show()
         tasmota.resp_cmnd("Led disabled")
     end
 
+    def finish_shot(idx)
+        self.duck_anim[idx - 1] = false
+        self.duck_red[idx - 1] = true
+    end
+
     def shoot_fast(idx)
-        if self.duck_anim[idx - 1]
+        if idx < 1 || idx > 4
+            return
+        end
+
+        if self.duck_anim[idx - 1] || self.duck_red[idx - 1]
             return
         end
 
         self.duck_anim[idx - 1] = true
         self.blink_state = true
-        self.loop_counter = 0
+        self.next_blink_ms = tasmota.millis() + BLINK_INTERVAL_MS
 
-        tasmota.set_timer(SHOT_TIME, def() self.duck_anim[idx - 1] = false end)
+        tasmota.set_timer(SHOT_TIME, def() self.finish_shot(idx) end)
     end
 
     def shoot(cmd, idx)
@@ -237,16 +297,58 @@ class WaveDriver
         tasmota.resp_cmnd("Duck" .. idx .. " shot down")
     end
 
+    def led_reset()
+        self.duck_anim = [false, false, false, false]
+        self.duck_red = [false, false, false, false]
+        self.blink_state = false
+        self.next_blink_ms = 0
+
+        if self.enabled
+            self.sea_wave()
+        else
+            self.strip.clear()
+            self.strip.show()
+        end
+
+        tasmota.resp_cmnd("Led reset")
+    end
+
     def led_init()
         self.enabled = false
         self.blink_state = false
-        self.loop_counter = 0
-        self.anim_counter = 0
+        self.next_anim_ms = 0
+        self.next_blink_ms = 0
+
         self.duck_anim = [false, false, false, false]
-        self.ldr_last = [false, false, false, false]
+        self.duck_red = [false, false, false, false]
+
+        self.ldr_latched = [false, false, false, false]
+        self.ldr_off_since = [0, 0, 0, 0]
+        self.ldr_lock_until = [0, 0, 0, 0]
+        self.ldr_debug = [false, false, false, false]
+
         self.strip.clear()
         self.strip.show()
         tasmota.resp_cmnd("Led init")
+    end
+
+    def ldr_status(cmd)
+        var msg = "LDR=["
+
+        for i: 0..3
+            if self.ldr_debug[i]
+                msg = msg .. "1"
+            else
+                msg = msg .. "0"
+            end
+
+            if i < 3
+                msg = msg .. ","
+            end
+        end
+
+        msg = msg .. "]"
+        tasmota.resp_cmnd(msg)
     end
 end
 
@@ -268,6 +370,8 @@ tasmota.add_cmd("enable", /cmd, idx -> wave_driver.enable_game())
 tasmota.add_cmd("disable", /cmd, idx -> wave_driver.disable_game())
 tasmota.add_cmd("duckshoot", /cmd, idx -> wave_driver.shoot(cmd, idx))
 tasmota.add_cmd("ledinit", /cmd, idx -> wave_driver.led_init())
+tasmota.add_cmd("ledreset", /cmd, idx -> wave_driver.led_reset())
+tasmota.add_cmd("ldrstatus", /cmd -> wave_driver.ldr_status(cmd))
 
 tasmota.add_cmd("home", /cmd, idx -> duck_game_driver.home(cmd, idx))
 tasmota.add_cmd("homeall", /cmd, idx -> duck_game_driver.home_all(cmd, idx))
@@ -300,7 +404,9 @@ print("--------------------------------------------------------------")
 print("enable - enable LED animation system")
 print("disable - disable LED and turn off all LEDs")
 print("ledinit - reset LED state and internal flags")
+print("ledreset - clear shot/red LED states")
 print("duckshoot<n> - start red blinking animation behind duck<n> for 5 seconds")
+print("ldrstatus - show current LDR raw hit states")
 print("--------------------------------------------------------------")
 
 tasmota.cmd("homeall")

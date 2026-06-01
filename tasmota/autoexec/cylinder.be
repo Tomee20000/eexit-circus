@@ -54,14 +54,14 @@ class CylinderDriver
     def lock(cmd, idx)
         tasmota.set_power(LAUNLOCK, false)
         tasmota.set_power(LALOCK, true)
-        tasmota.set_timer(5000, / -> tasmota.set_power(LALOCK, false))
+        tasmota.set_timer(3000, / -> tasmota.set_power(LALOCK, false))
         tasmota.resp_cmnd("Cylinder locked")
     end
 
     def unlock(cmd, idx)
         tasmota.set_power(LALOCK, false)
         tasmota.set_power(LAUNLOCK, true)
-        tasmota.delay(5000)
+        tasmota.delay(3000)
         tasmota.set_power(LAUNLOCK, false)
         tasmota.resp_cmnd("Cylinder unlocked")
     end

@@ -14,7 +14,7 @@ var DRAWER = 1
 var BEEPER = 0
 var SCREEN = 7
 
-var CORRECT_CODE = "12345"
+var CORRECT_CODE = "5317813775385138"
 
 class CashRegister
     var code, button_pressed, solved
@@ -46,7 +46,7 @@ class CashRegister
     def button_push(message)
         if !self.button_pressed
 
-            if size(self.code) < 5 && message != "ENTER"
+            if size(self.code) < size(CORRECT_CODE) && message != "ENTER"
                 self.beep()
                 self.code += message
                 tasmota.cmd("DisplayText[zr]")
