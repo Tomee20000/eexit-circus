@@ -1,4 +1,5 @@
 import math
+import mqtt
 
 # =========================================================
 # CONFIG
@@ -24,13 +25,21 @@ var SHOT_TIME = 5000
 
 var WAVE_SPEED = 0.15
 var WAVE_LENGTH = 3
-var BASE_BRIGHTNESS = 120
-var WAVE_AMPLITUDE = 20
+var BASE_BRIGHTNESS = 80
+var WAVE_AMPLITUDE = 60
+
+var SOLVED_TOPIC = "CDUCKGAME"
+var SOLVED_PAYLOAD = '{"data":"SOLVED"}'
 
 # =========================================================
 # SERIAL
 # =========================================================
-var serial_port = serial(SERIAL_RX, SERIAL_TX, SERIAL_BAUD, SERIAL_MODE)
+var serial_port = serial(
+    SERIAL_RX,
+    SERIAL_TX,
+    SERIAL_BAUD,
+    SERIAL_MODE
+)
 
 # =========================================================
 # LED MAP
@@ -51,8 +60,11 @@ def duck_command(cmd, idx, payload, payload_json)
     tasmota.resp_cmnd_done()
 end
 
-tasmota.add_cmd("duck", /cmd, idx, payload, payload_json -> duck_command(cmd, idx, payload, payload_json))
-
+tasmota.add_cmd(
+    "duck",
+    /cmd, idx, payload, payload_json ->
+        duck_command(cmd, idx, payload, payload_json)
+)
 
 # =========================================================
 # DUCK GAME DRIVER
@@ -60,52 +72,74 @@ tasmota.add_cmd("duck", /cmd, idx, payload, payload_json -> duck_command(cmd, id
 class DuckGameDriver
 
     def home(cmd, idx)
-        serial_port.write(bytes().fromstring("duck" .. idx .. " home\n"))
+        serial_port.write(
+            bytes().fromstring("duck" .. idx .. " home\n")
+        )
         tasmota.resp_cmnd("duck" .. idx .. " homing")
     end
 
     def home_all(cmd, idx)
-        serial_port.write(bytes().fromstring("homeall\n"))
+        serial_port.write(
+            bytes().fromstring("homeall\n")
+        )
         tasmota.resp_cmnd("homing all")
     end
 
     def move(cmd, idx)
-        serial_port.write(bytes().fromstring("duck" .. idx .. " move\n"))
+        serial_port.write(
+            bytes().fromstring("duck" .. idx .. " move\n")
+        )
         tasmota.resp_cmnd("duck" .. idx .. " moving")
     end
 
     def move_all(cmd, idx)
-        serial_port.write(bytes().fromstring("moveall\n"))
+        serial_port.write(
+            bytes().fromstring("moveall\n")
+        )
         tasmota.cmd("ledinit")
         tasmota.cmd("enable")
         tasmota.resp_cmnd("moving all")
     end
 
     def stop(cmd, idx)
-        serial_port.write(bytes().fromstring("duck" .. idx .. " stop\n"))
+        serial_port.write(
+            bytes().fromstring("duck" .. idx .. " stop\n")
+        )
         tasmota.resp_cmnd("duck" .. idx .. " stopped")
     end
 
     def stop_all(cmd, idx)
-        serial_port.write(bytes().fromstring("stopall\n"))
+        serial_port.write(
+            bytes().fromstring("stopall\n")
+        )
         tasmota.resp_cmnd("all stopped")
     end
 
     def restart(cmd, idx)
-        serial_port.write(bytes().fromstring("duck" .. idx .. " restart\n"))
+        serial_port.write(
+            bytes().fromstring("duck" .. idx .. " restart\n")
+        )
         tasmota.resp_cmnd("duck" .. idx .. " restarting")
     end
 
     def set_speed(cmd, idx, speed)
-        if speed == "" || number(speed) > 10 || number(speed) < 1
+        if speed == "" ||
+           number(speed) > 10 ||
+           number(speed) < 1
             return
         end
 
-        serial_port.write(bytes().fromstring("duck" .. idx .. " speed " .. speed .. "\n"))
-        tasmota.resp_cmnd("duck" .. idx .. " speed set to " .. speed)
+        serial_port.write(
+            bytes().fromstring(
+                "duck" .. idx .. " speed " .. speed .. "\n"
+            )
+        )
+
+        tasmota.resp_cmnd(
+            "duck" .. idx .. " speed set to " .. speed
+        )
     end
 end
-
 
 # =========================================================
 # WAVE / LDR DRIVER
@@ -118,6 +152,7 @@ class WaveDriver
     var next_anim_ms, next_blink_ms
     var ldr_latched, ldr_off_since, ldr_lock_until
     var ldr_debug
+    var solved
 
     def init()
         self.time = 0
@@ -125,29 +160,68 @@ class WaveDriver
         self.blink_state = false
         self.next_anim_ms = 0
         self.next_blink_ms = 0
+        self.solved = false
 
-        self.duck_anim = [false, false, false, false]
-        self.duck_red = [false, false, false, false]
+        self.duck_anim = [
+            false,
+            false,
+            false,
+            false
+        ]
 
-        self.ldr_latched = [false, false, false, false]
+        self.duck_red = [
+            false,
+            false,
+            false,
+            false
+        ]
+
+        self.ldr_latched = [
+            false,
+            false,
+            false,
+            false
+        ]
+
         self.ldr_off_since = [0, 0, 0, 0]
         self.ldr_lock_until = [0, 0, 0, 0]
-        self.ldr_debug = [false, false, false, false]
+
+        self.ldr_debug = [
+            false,
+            false,
+            false,
+            false
+        ]
 
         for i: 0..3
             if LDR_USE_PULLUP
-                gpio.pin_mode(LDR_PINS[i], gpio.INPUT_PULLUP)
+                gpio.pin_mode(
+                    LDR_PINS[i],
+                    gpio.INPUT_PULLUP
+                )
             else
-                gpio.pin_mode(LDR_PINS[i], gpio.INPUT)
+                gpio.pin_mode(
+                    LDR_PINS[i],
+                    gpio.INPUT
+                )
             end
         end
 
-        self.strip = Leds(LED_COUNT, gpio.pin(gpio.WS2812, WS2812_PIN))
+        self.strip = Leds(
+            LED_COUNT,
+            gpio.pin(gpio.WS2812, WS2812_PIN)
+        )
+
         self.strip.clear()
         self.strip.show()
 
-        tasmota.add_fast_loop(/ -> self.ldr_loop())
-        tasmota.add_fast_loop(/ -> self.anim_loop())
+        tasmota.add_fast_loop(
+            / -> self.ldr_loop()
+        )
+
+        tasmota.add_fast_loop(
+            / -> self.anim_loop()
+        )
     end
 
     def read_ldr_pin(i)
@@ -170,18 +244,24 @@ class WaveDriver
             if hit
                 self.ldr_off_since[i] = 0
 
-                if !self.ldr_latched[i] && now >= self.ldr_lock_until[i]
+                if !self.ldr_latched[i] &&
+                   now >= self.ldr_lock_until[i]
+
                     self.ldr_latched[i] = true
-                    self.ldr_lock_until[i] = now + LDR_LOCK_MS
+                    self.ldr_lock_until[i] =
+                        now + LDR_LOCK_MS
+
                     self.shoot_fast(i + 1)
                 end
-
             else
                 if self.ldr_off_since[i] == 0
                     self.ldr_off_since[i] = now
                 end
 
-                if self.ldr_latched[i] && now - self.ldr_off_since[i] >= LDR_REARM_MS
+                if self.ldr_latched[i] &&
+                   now - self.ldr_off_since[i] >=
+                   LDR_REARM_MS
+
                     self.ldr_latched[i] = false
                 end
             end
@@ -199,7 +279,8 @@ class WaveDriver
             return
         end
 
-        self.next_anim_ms = now + ANIM_INTERVAL_MS
+        self.next_anim_ms =
+            now + ANIM_INTERVAL_MS
 
         self.ldr_loop()
         self.sea_wave()
@@ -211,8 +292,14 @@ class WaveDriver
     end
 
     def set_duck_pixels(duck_id, color, brightness)
-        for i: 0..(duck_led_map[duck_id].size() - 1)
-            self.strip.set_pixel_color(duck_led_map[duck_id][i], color, brightness)
+        for i: 0..(
+            duck_led_map[duck_id].size() - 1
+        )
+            self.strip.set_pixel_color(
+                duck_led_map[duck_id][i],
+                color,
+                brightness
+            )
         end
     end
 
@@ -221,34 +308,63 @@ class WaveDriver
         var red_color = self.rgb(255, 0, 0)
 
         for i: 0..(LED_COUNT - 1)
-            var wave = math.sin((i / WAVE_LENGTH) + self.time)
+            var wave = math.sin(
+                (i / WAVE_LENGTH) + self.time
+            )
+
             var level = (wave + 1) / 2
-            var brightness = BASE_BRIGHTNESS + (level * WAVE_AMPLITUDE)
+
+            var brightness =
+                BASE_BRIGHTNESS +
+                (level * WAVE_AMPLITUDE)
 
             if brightness > 255
                 brightness = 255
             end
 
-            self.strip.set_pixel_color(i, self.rgb(0, 0, int(brightness)), 255)
+            self.strip.set_pixel_color(
+                i,
+                self.rgb(
+                    0,
+                    0,
+                    int(brightness)
+                ),
+                255
+            )
         end
 
         for duck_id: 1..4
             if self.duck_red[duck_id - 1]
-                self.set_duck_pixels(duck_id, red_color, 255)
+                self.set_duck_pixels(
+                    duck_id,
+                    red_color,
+                    255
+                )
             end
 
             if self.duck_anim[duck_id - 1]
                 if self.blink_state
-                    self.set_duck_pixels(duck_id, red_color, 255)
+                    self.set_duck_pixels(
+                        duck_id,
+                        red_color,
+                        255
+                    )
                 else
-                    self.set_duck_pixels(duck_id, red_color, 0)
+                    self.set_duck_pixels(
+                        duck_id,
+                        red_color,
+                        0
+                    )
                 end
             end
         end
 
         if now >= self.next_blink_ms
-            self.next_blink_ms = now + BLINK_INTERVAL_MS
-            self.blink_state = !self.blink_state
+            self.next_blink_ms =
+                now + BLINK_INTERVAL_MS
+
+            self.blink_state =
+                !self.blink_state
         end
 
         self.strip.show()
@@ -259,21 +375,68 @@ class WaveDriver
         self.enabled = true
         self.next_anim_ms = 0
         self.next_blink_ms = 0
+
         tasmota.resp_cmnd("Led enabled")
     end
 
     def disable_game()
         self.enabled = false
-        self.duck_anim = [false, false, false, false]
-        self.duck_red = [false, false, false, false]
+
+        self.duck_anim = [
+            false,
+            false,
+            false,
+            false
+        ]
+
+        self.duck_red = [
+            false,
+            false,
+            false,
+            false
+        ]
+
+        self.solved = false
+
         self.strip.clear()
         self.strip.show()
+
         tasmota.resp_cmnd("Led disabled")
+    end
+
+    def check_solved()
+        if self.solved
+            return
+        end
+
+        if self.duck_red[0] &&
+           self.duck_red[1] &&
+           self.duck_red[2] &&
+           self.duck_red[3]
+
+            self.solved = true
+
+            mqtt.publish(
+                SOLVED_TOPIC,
+                SOLVED_PAYLOAD,
+                false
+            )
+
+            print("DuckGame solved")
+            print(
+                "MQTT: " ..
+                SOLVED_TOPIC ..
+                " = " ..
+                SOLVED_PAYLOAD
+            )
+        end
     end
 
     def finish_shot(idx)
         self.duck_anim[idx - 1] = false
         self.duck_red[idx - 1] = true
+
+        self.check_solved()
     end
 
     def shoot_fast(idx)
@@ -281,25 +444,50 @@ class WaveDriver
             return
         end
 
-        if self.duck_anim[idx - 1] || self.duck_red[idx - 1]
+        if self.duck_anim[idx - 1] ||
+           self.duck_red[idx - 1]
             return
         end
 
         self.duck_anim[idx - 1] = true
         self.blink_state = true
-        self.next_blink_ms = tasmota.millis() + BLINK_INTERVAL_MS
 
-        tasmota.set_timer(SHOT_TIME, def() self.finish_shot(idx) end)
+        self.next_blink_ms =
+            tasmota.millis() +
+            BLINK_INTERVAL_MS
+
+        tasmota.set_timer(
+            SHOT_TIME,
+            def()
+                self.finish_shot(idx)
+            end
+        )
     end
 
     def shoot(cmd, idx)
         self.shoot_fast(idx)
-        tasmota.resp_cmnd("Duck" .. idx .. " shot down")
+
+        tasmota.resp_cmnd(
+            "Duck" .. idx .. " shot down"
+        )
     end
 
     def led_reset()
-        self.duck_anim = [false, false, false, false]
-        self.duck_red = [false, false, false, false]
+        self.duck_anim = [
+            false,
+            false,
+            false,
+            false
+        ]
+
+        self.duck_red = [
+            false,
+            false,
+            false,
+            false
+        ]
+
+        self.solved = false
         self.blink_state = false
         self.next_blink_ms = 0
 
@@ -315,20 +503,45 @@ class WaveDriver
 
     def led_init()
         self.enabled = false
+        self.solved = false
         self.blink_state = false
         self.next_anim_ms = 0
         self.next_blink_ms = 0
 
-        self.duck_anim = [false, false, false, false]
-        self.duck_red = [false, false, false, false]
+        self.duck_anim = [
+            false,
+            false,
+            false,
+            false
+        ]
 
-        self.ldr_latched = [false, false, false, false]
+        self.duck_red = [
+            false,
+            false,
+            false,
+            false
+        ]
+
+        self.ldr_latched = [
+            false,
+            false,
+            false,
+            false
+        ]
+
         self.ldr_off_since = [0, 0, 0, 0]
         self.ldr_lock_until = [0, 0, 0, 0]
-        self.ldr_debug = [false, false, false, false]
+
+        self.ldr_debug = [
+            false,
+            false,
+            false,
+            false
+        ]
 
         self.strip.clear()
         self.strip.show()
+
         tasmota.resp_cmnd("Led init")
     end
 
@@ -348,10 +561,10 @@ class WaveDriver
         end
 
         msg = msg .. "]"
+
         tasmota.resp_cmnd(msg)
     end
 end
-
 
 # =========================================================
 # INIT
@@ -362,26 +575,83 @@ var wave_driver = WaveDriver()
 tasmota.add_driver(duck_game_driver)
 tasmota.add_driver(wave_driver)
 
-
 # =========================================================
 # COMMANDS
 # =========================================================
-tasmota.add_cmd("enable", /cmd, idx -> wave_driver.enable_game())
-tasmota.add_cmd("disable", /cmd, idx -> wave_driver.disable_game())
-tasmota.add_cmd("duckshoot", /cmd, idx -> wave_driver.shoot(cmd, idx))
-tasmota.add_cmd("ledinit", /cmd, idx -> wave_driver.led_init())
-tasmota.add_cmd("ledreset", /cmd, idx -> wave_driver.led_reset())
-tasmota.add_cmd("ldrstatus", /cmd -> wave_driver.ldr_status(cmd))
+tasmota.add_cmd(
+    "enable",
+    /cmd, idx -> wave_driver.enable_game()
+)
 
-tasmota.add_cmd("home", /cmd, idx -> duck_game_driver.home(cmd, idx))
-tasmota.add_cmd("homeall", /cmd, idx -> duck_game_driver.home_all(cmd, idx))
-tasmota.add_cmd("move", /cmd, idx -> duck_game_driver.move(cmd, idx))
-tasmota.add_cmd("moveall", /cmd, idx -> duck_game_driver.move_all(cmd, idx))
-tasmota.add_cmd("stop", /cmd, idx -> duck_game_driver.stop(cmd, idx))
-tasmota.add_cmd("stopall", /cmd, idx -> duck_game_driver.stop_all(cmd, idx))
-tasmota.add_cmd("duckrestart", /cmd, idx -> duck_game_driver.restart(cmd, idx))
-tasmota.add_cmd("speed", /cmd, idx, speed -> duck_game_driver.set_speed(cmd, idx, speed))
+tasmota.add_cmd(
+    "disable",
+    /cmd, idx -> wave_driver.disable_game()
+)
 
+tasmota.add_cmd(
+    "duckshoot",
+    /cmd, idx -> wave_driver.shoot(cmd, idx)
+)
+
+tasmota.add_cmd(
+    "ledinit",
+    /cmd, idx -> wave_driver.led_init()
+)
+
+tasmota.add_cmd(
+    "ledreset",
+    /cmd, idx -> wave_driver.led_reset()
+)
+
+tasmota.add_cmd(
+    "ldrstatus",
+    /cmd -> wave_driver.ldr_status(cmd)
+)
+
+tasmota.add_cmd(
+    "home",
+    /cmd, idx -> duck_game_driver.home(cmd, idx)
+)
+
+tasmota.add_cmd(
+    "homeall",
+    /cmd, idx -> duck_game_driver.home_all(cmd, idx)
+)
+
+tasmota.add_cmd(
+    "move",
+    /cmd, idx -> duck_game_driver.move(cmd, idx)
+)
+
+tasmota.add_cmd(
+    "moveall",
+    /cmd, idx -> duck_game_driver.move_all(cmd, idx)
+)
+
+tasmota.add_cmd(
+    "stop",
+    /cmd, idx -> duck_game_driver.stop(cmd, idx)
+)
+
+tasmota.add_cmd(
+    "stopall",
+    /cmd, idx -> duck_game_driver.stop_all(cmd, idx)
+)
+
+tasmota.add_cmd(
+    "duckrestart",
+    /cmd, idx -> duck_game_driver.restart(cmd, idx)
+)
+
+tasmota.add_cmd(
+    "speed",
+    /cmd, idx, speed ->
+        duck_game_driver.set_speed(
+            cmd,
+            idx,
+            speed
+        )
+)
 
 # =========================================================
 # HELP / INFO
@@ -407,6 +677,8 @@ print("ledinit - reset LED state and internal flags")
 print("ledreset - clear shot/red LED states")
 print("duckshoot<n> - start red blinking animation behind duck<n> for 5 seconds")
 print("ldrstatus - show current LDR raw hit states")
+print("Solved topic: CDUCKGAME")
+print('Solved payload: {"data":"SOLVED"}')
 print("--------------------------------------------------------------")
 
 tasmota.cmd("homeall")

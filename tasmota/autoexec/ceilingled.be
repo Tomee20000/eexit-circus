@@ -12,9 +12,9 @@ var PWM8 = 23
 class CeilingLed
     var n, max_pwm, pin, lvl, tgt, act
     var dim, dim_t, fade_step, dim_step
-    var mode, cnt, run_spd, rnd_spd, all_spd
+    var mode, cnt, run_spd, rnd_spd
     var r_led, r_done, r_total
-    var b_total, b_done, b_on
+    var fill_led, fill_done, fill_started
     var rnd_end, final_led, new_led, old_led, rng
 
     def init()
@@ -46,15 +46,14 @@ class CeilingLed
         self.cnt = 0
         self.run_spd = 1
         self.rnd_spd = 10
-        self.all_spd = 4
 
         self.r_led = 0
         self.r_done = 0
         self.r_total = 0
 
-        self.b_total = 0
-        self.b_done = 0
-        self.b_on = 0
+        self.fill_led = 0
+        self.fill_done = 0
+        self.fill_started = 0
 
         self.rnd_end = 0
         self.final_led = 0
@@ -129,9 +128,9 @@ class CeilingLed
         self.r_led = 0
         self.r_done = 0
         self.r_total = 0
-        self.b_total = 0
-        self.b_done = 0
-        self.b_on = 0
+        self.fill_led = 0
+        self.fill_done = 0
+        self.fill_started = 0
         self.rnd_end = 0
         self.final_led = 0
         self.new_led = 0
@@ -408,33 +407,22 @@ class CeilingLed
         tasmota.resp_cmnd("Random3 started for " .. seconds .. " sec, final led: " .. final_led)
     end
 
-    def run_start(cmd, mode, rounds)
-        mode = int(mode)
+    def run_start(cmd, rounds)
         rounds = int(rounds)
 
-        if mode == 1
-            if rounds < 1
-                tasmota.resp_cmnd("Bad rounds value")
-                return
-            end
-
-            self.stop0()
-            self.set_all(0)
-            self.r_total = rounds
-            self.r_done = 0
-            self.r_led = 0
-            self.mode = 1
-
-            tasmota.resp_cmnd("Number of rounds set to " .. self.r_total)
-
-        elif mode == 0
-            self.stop0()
-            self.set_all(0)
-            tasmota.resp_cmnd("Led off")
-
-        else
-            tasmota.resp_cmnd("Bad mode, use 1 or 0")
+        if rounds < 1
+            tasmota.resp_cmnd("Bad rounds value")
+            return
         end
+
+        self.stop0()
+        self.set_all(0)
+        self.r_total = rounds
+        self.r_done = 0
+        self.r_led = 0
+        self.mode = 1
+
+        tasmota.resp_cmnd("Number of rounds set to " .. self.r_total)
     end
 
     def run_step()
@@ -469,40 +457,44 @@ class CeilingLed
         end
     end
 
-    def all_run(cmd, i, rounds)
-        rounds = int(rounds)
+    def fill_start(cmd, start_led)
+        start_led = int(start_led)
 
-        if rounds < 1
-            tasmota.resp_cmnd("Bad rounds value")
+        if start_led < 1 || start_led > self.n
+            tasmota.resp_cmnd("Bad start led, use 1.." .. self.n)
             return
         end
 
         self.stop0()
         self.set_all(0)
-
-        self.b_total = rounds
-        self.b_done = 0
-        self.b_on = 0
+        self.fill_led = start_led
+        self.fill_done = 0
+        self.fill_started = 0
         self.mode = 4
 
-        tasmota.resp_cmnd("All running, rounds: " .. rounds)
+        tasmota.resp_cmnd("Fill started from led " .. start_led)
     end
 
-    def all_step()
-        if self.b_done >= self.b_total
+    def previous_led(i)
+        i = i - 1
+
+        if i < 1
+            i = self.n
+        end
+
+        return i
+    end
+
+    def fill_step()
+        if self.fill_done >= self.n - 1
             self.mode = 0
-            self.set_all(0)
+            self.fill_led = 0
             return
         end
 
-        if self.b_on == 0
-            self.set_all(1)
-            self.b_on = 1
-        else
-            self.set_all(0)
-            self.b_on = 0
-            self.b_done = self.b_done + 1
-        end
+        self.fill_done = self.fill_done + 1
+        self.fill_led = self.previous_led(self.fill_led)
+        self.set_led(self.fill_led, 1)
     end
 
     def finish_step()
@@ -595,6 +587,31 @@ class CeilingLed
                 self.mode = 5
             end
 
+        elif self.mode == 4
+            if self.fill_started == 0
+                for i: 1 .. self.n
+                    if self.lvl[i] > 0
+                        return
+                    end
+                end
+
+                self.set_led(self.fill_led, 1)
+                self.fill_started = 1
+                self.cnt = 0
+                return
+            end
+
+            if self.fill_led == 0 || self.lvl[self.fill_led] < self.max_pwm
+                return
+            end
+
+            self.cnt = self.cnt + 1
+
+            if self.cnt >= self.run_spd
+                self.cnt = 0
+                self.fill_step()
+            end
+
         elif self.mode == 5
             if self.lvl[self.old_led] <= 0
                 self.new_led = 0
@@ -616,14 +633,6 @@ class CeilingLed
                 self.old_led = 0
                 self.mode = 6
             end
-
-        elif self.mode == 4
-            self.cnt = self.cnt + 1
-
-            if self.cnt >= self.all_spd
-                self.cnt = 0
-                self.all_step()
-            end
         end
     end
 
@@ -644,11 +653,11 @@ var ceiling_led_driver = CeilingLed()
 tasmota.add_driver(ceiling_led_driver)
 
 tasmota.add_cmd("pwmdimmer", /cmd, pwm_number, state -> ceiling_led_driver.manual(cmd, number(pwm_number), number(state)))
-tasmota.add_cmd("runningled", /cmd, mode, rounds -> ceiling_led_driver.run_start(cmd, number(mode), number(rounds)))
+tasmota.add_cmd("runningled", /cmd, i, rounds -> ceiling_led_driver.run_start(cmd, number(rounds)))
+tasmota.add_cmd("fillled", /cmd, i, start_led -> ceiling_led_driver.fill_start(cmd, number(start_led)))
 tasmota.add_cmd("runningspeed", /cmd, i, speed -> ceiling_led_driver.set_run_speed(cmd, i, number(speed)))
 tasmota.add_cmd("allon", / -> ceiling_led_driver.all_on())
 tasmota.add_cmd("alloff", / -> ceiling_led_driver.all_off())
-tasmota.add_cmd("allrunning", /cmd, i, rounds -> ceiling_led_driver.all_run(cmd, i, number(rounds)))
 tasmota.add_cmd("ceildim", /cmd, i, percent -> ceiling_led_driver.set_dim(cmd, number(percent)))
 tasmota.add_cmd("random", /cmd, idx, payload -> ceiling_led_driver.random_cmd(cmd, idx, payload))
 tasmota.add_cmd("randomspeed", /cmd, i, speed -> ceiling_led_driver.set_random_speed(cmd, number(speed)))
@@ -657,17 +666,17 @@ tasmota.add_cmd("ceilstatus", /cmd -> ceiling_led_driver.status(cmd))
 
 ceiling_led_driver.all_off()
 
-print("CeilingLed driver loaded")
+print("CeilingLed driver loaded - FILL REVERSE V2")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("pwmdimmer<n> <state> - set selected LED, state: 1-on 0-off")
-print("runningled<mode> <rounds> - running LED mode, mode: 1-on 0-off")
-print("runningspeed <speed> - speed of runningled")
+print("runningled <rounds> - run selected number of rounds")
+print("fillled <start_led> - order: start, start-1 ... 1, 8 ...")
+print("runningspeed <speed> - speed of runningled and fillled")
 print("allon - turn on all LEDs")
 print("alloff - turn off all LEDs")
-print("allrunning <rounds> - turn all LEDs on and off for the selected rounds")
 print("ceildim <0..100> - global dimmer")
-print("random3 <seconds> <final_led> - random 3 LED animation, final_led remains on")
+print("random <seconds> <final_led> - random 3 LED animation, final_led remains on")
 print("randomspeed <speed> - speed of random3")
 print("ceilstop - stop current animation")
 print("ceilstatus - show current state")

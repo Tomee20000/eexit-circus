@@ -152,10 +152,10 @@ class ClawMachine
                 gpio.digital_write(MOTOR_CLAW2, gpio.HIGH)
                 
                 # after 4.5 sec claw stops, grabs
-                tasmota.set_timer(4500, / -> self.claw_stop())
+                tasmota.set_timer(4650, / -> self.claw_stop())
 
                 # claw goes up
-                tasmota.set_timer(6000, / -> self.claw_up())
+                tasmota.set_timer(6150, / -> self.claw_up())
 
                 #claw is up
                 tasmota.set_timer(13000, / -> self.claw_home())
