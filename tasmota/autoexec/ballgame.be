@@ -2,6 +2,8 @@ import mqtt
 import gpio
 
 var SWITCH_PIN = 7
+var RED_LED_PIN = 5
+var GREEN_LED_PIN = 6
 
 var PN532_RX = 3
 var PN532_TX = 4
@@ -9,6 +11,7 @@ var PN532_BAUD = 115200
 
 var NO_CARD_TIMEOUT = 1000
 var PN532_RESPONSE_TIMEOUT = 300
+var BLINK_INTERVAL = 250
 
 var uid_list1 = ["04175341BE2A81","0446D14FBD2A81","0479F94FBD2A81","04DDE34FBD2A81","04BC1240BE2A81","04EF2340BE2A81","0454EB4FBD2A81","04C9F44FBD2A81","04153840BE2A81","0465EE4FBD2A81","04C15541BE2A81","0473EE4FBD2A81","04A53340BE2A81","0429DE4FBD2A81","044F2940BE2A81","044DD44FBD2A81","0427DE4FBD2A81","04661C40BE2A81","047DDA4FBD2A81","04E1E34FBD2A81","0413E84FBD2A81","046ACD4FBD2A81"]
 var uid_list2 = ["04CF6440BE2A81","04114B40BE2A81","04434540BE2A81","04155640BE2A81","04EF5B40BE2A81","04B73C40BE2A81","046B2240BE2A81","04741C40BE2A81","0499F34FBD2A81","04C12E40BE2A81","046B2240BE0704","04D81340BE2A81","042BFE4FBD2A81","04FEE74FBD2A81","0449F84FBD2A81","04F4CF4FBD2A81","04AE2740BE2A81","0433EC4FBD2A81","0412D74FBD2A81","04DCD34FBD2A81","042ADB4FBD2A81","04FBE24FBD2A81","043A3540BE2A81"]
@@ -40,6 +43,11 @@ class BallGame
     var card_present
     var timeout_sent
 
+    var blink_active
+    var blink_pin
+    var blink_step
+    var blink_last_time
+
     def process_uid(uid)
         var out = "NOT FOUND"
         var idx = 1
@@ -68,6 +76,14 @@ class BallGame
         end
     end
 
+    def clear_ball()
+        mqtt.publish(self.topic .. "/BALL", "-")
+
+        self.card_present = false
+        self.last_uid = ""
+        self.timeout_sent = true
+    end
+
     def check_card_timeout()
         if self.card_present &&
            !self.timeout_sent &&
@@ -80,6 +96,71 @@ class BallGame
             mqtt.publish(self.topic .. "/BALL", "-")
             print("NFC removed")
         end
+    end
+
+    def start_blink(pin, opposite_pin)
+        gpio.digital_write(opposite_pin, 0)
+        gpio.digital_write(pin, 0)
+
+        self.blink_pin = pin
+        self.blink_step = 0
+        self.blink_last_time = tasmota.millis()
+        self.blink_active = true
+
+        gpio.digital_write(pin, 1)
+    end
+
+    def redblink()
+        self.start_blink(RED_LED_PIN, GREEN_LED_PIN)
+    end
+
+    def greenblink()
+        self.start_blink(GREEN_LED_PIN, RED_LED_PIN)
+    end
+
+    def handle_blink()
+        if !self.blink_active
+            return
+        end
+
+        if tasmota.millis() - self.blink_last_time < BLINK_INTERVAL
+            return
+        end
+
+        self.blink_last_time = tasmota.millis()
+        self.blink_step = self.blink_step + 1
+
+        if self.blink_step == 1
+            gpio.digital_write(self.blink_pin, 0)
+
+        elif self.blink_step == 2
+            gpio.digital_write(self.blink_pin, 1)
+
+        elif self.blink_step == 3
+            gpio.digital_write(self.blink_pin, 0)
+
+        elif self.blink_step == 4
+            gpio.digital_write(self.blink_pin, 1)
+
+        elif self.blink_step == 5
+            gpio.digital_write(self.blink_pin, 0)
+
+        elif self.blink_step >= 6
+            gpio.digital_write(self.blink_pin, 0)
+            self.blink_active = false
+
+            tasmota.cmd("State")
+        end
+    end
+
+    def command_redblink(cmd, idx, payload)
+        self.redblink()
+        tasmota.resp_cmnd_done()
+    end
+
+    def command_greenblink(cmd, idx, payload)
+        self.greenblink()
+        tasmota.resp_cmnd_done()
     end
 
     def publish_switch(state)
@@ -263,15 +344,31 @@ class BallGame
         if state != self.switch_state
             self.switch_state = state
             self.publish_switch(state)
+
+            if state == 0
+                self.clear_ball()
+            end
         end
 
         self.handle_pn532()
         self.check_card_timeout()
+        self.handle_blink()
     end
 
     def init()
         self.topic = tasmota.cmd("Topic")["Topic"]
         self.switch_state = gpio.digital_read(SWITCH_PIN)
+
+        gpio.pin_mode(RED_LED_PIN, gpio.OUTPUT)
+        gpio.pin_mode(GREEN_LED_PIN, gpio.OUTPUT)
+
+        gpio.digital_write(RED_LED_PIN, 0)
+        gpio.digital_write(GREEN_LED_PIN, 0)
+
+        self.blink_active = false
+        self.blink_pin = RED_LED_PIN
+        self.blink_step = 0
+        self.blink_last_time = tasmota.millis()
 
         self.rx_buffer = []
         self.pn532_state = 0
@@ -292,6 +389,21 @@ class BallGame
 
         self.ser.write(
             bytes("55550000000000000000000000000000")
+        )
+
+        tasmota.remove_cmd("RedBlink")
+        tasmota.remove_cmd("GreenBlink")
+
+        tasmota.add_cmd(
+            "RedBlink",
+            /cmd, idx, payload ->
+                self.command_redblink(cmd, idx, payload)
+        )
+
+        tasmota.add_cmd(
+            "GreenBlink",
+            /cmd, idx, payload ->
+                self.command_greenblink(cmd, idx, payload)
         )
 
         mqtt.publish(self.topic .. "/BALL", "-")
