@@ -112,6 +112,8 @@ class BallGame
             /t, idx, data, b -> self.on_mqtt_message(t, data)
         )
 
+        mqtt.publish(self.topic .. "/BALL", "-")
+        
         tasmota.add_fast_loop(/ -> self.fast_loop())
     end
 end
