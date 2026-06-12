@@ -3,8 +3,8 @@ import gpio
 
 var SWITCH_PIN = 7
 
-var RED_LED = 1
-var GREEN_LED = 2
+var RED_LED = 0
+var GREEN_LED = 1
 
 var PN532_RX = 3
 var PN532_TX = 4
@@ -39,17 +39,17 @@ class BallGame
     var pn532_state
     var pn532_start_time
 
-    var last_uid
     var last_read_time
     var card_present
     var timeout_sent
+    var current_ball
 
     var blink_active
     var blink_power
     var blink_step
     var blink_last_time
 
-    def process_uid(uid)
+    def find_ball(uid)
         var out = "NOT FOUND"
         var idx = 1
 
@@ -62,26 +62,31 @@ class BallGame
             idx = idx + 1
         end
 
-        print("UID: " .. uid .. " -> " .. out)
-        mqtt.publish(self.topic .. "/BALL", out)
+        return out
     end
 
     def card_read(uid)
         self.last_read_time = tasmota.millis()
+        self.card_present = true
         self.timeout_sent = false
 
-        if !self.card_present || uid != self.last_uid
-            self.card_present = true
-            self.last_uid = uid
-            self.process_uid(uid)
+        var ball = self.find_ball(uid)
+
+        if ball != self.current_ball
+            self.current_ball = ball
+
+            print("UID: " .. uid .. " -> " .. ball)
+            mqtt.publish(self.topic .. "/BALL", ball)
         end
     end
 
     def clear_ball()
-        mqtt.publish(self.topic .. "/BALL", "-")
+        if self.current_ball != "-"
+            mqtt.publish(self.topic .. "/BALL", "-")
+        end
 
+        self.current_ball = "-"
         self.card_present = false
-        self.last_uid = ""
         self.timeout_sent = true
     end
 
@@ -91,11 +96,13 @@ class BallGame
            tasmota.millis() - self.last_read_time >= NO_CARD_TIMEOUT
 
             self.card_present = false
-            self.last_uid = ""
             self.timeout_sent = true
 
-            mqtt.publish(self.topic .. "/BALL", "-")
-            print("NFC removed")
+            if self.current_ball != "-"
+                self.current_ball = "-"
+                mqtt.publish(self.topic .. "/BALL", "-")
+                print("NFC removed")
+            end
         end
     end
 
@@ -145,12 +152,7 @@ class BallGame
 
         elif self.blink_step == 5
             tasmota.set_power(self.blink_power, false)
-
-        elif self.blink_step >= 6
-            tasmota.set_power(self.blink_power, false)
             self.blink_active = false
-
-            tasmota.cmd("State")
         end
     end
 
@@ -372,10 +374,10 @@ class BallGame
         self.pn532_state = 0
         self.pn532_start_time = tasmota.millis()
 
-        self.last_uid = ""
         self.last_read_time = tasmota.millis()
         self.card_present = false
         self.timeout_sent = true
+        self.current_ball = "-"
 
         self.ser = serial(
             PN532_RX,
