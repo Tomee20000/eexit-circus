@@ -2,8 +2,9 @@ import mqtt
 import gpio
 
 var SWITCH_PIN = 7
-var RED_LED_PIN = 5
-var GREEN_LED_PIN = 6
+
+var RED_LED = 1
+var GREEN_LED = 2
 
 var PN532_RX = 3
 var PN532_TX = 4
@@ -44,7 +45,7 @@ class BallGame
     var timeout_sent
 
     var blink_active
-    var blink_pin
+    var blink_power
     var blink_step
     var blink_last_time
 
@@ -98,24 +99,24 @@ class BallGame
         end
     end
 
-    def start_blink(pin, opposite_pin)
-        gpio.digital_write(opposite_pin, 0)
-        gpio.digital_write(pin, 0)
+    def start_blink(power, opposite_power)
+        tasmota.set_power(opposite_power, false)
+        tasmota.set_power(power, false)
 
-        self.blink_pin = pin
+        self.blink_power = power
         self.blink_step = 0
         self.blink_last_time = tasmota.millis()
         self.blink_active = true
 
-        gpio.digital_write(pin, 1)
+        tasmota.set_power(power, true)
     end
 
     def redblink()
-        self.start_blink(RED_LED_PIN, GREEN_LED_PIN)
+        self.start_blink(RED_LED, GREEN_LED)
     end
 
     def greenblink()
-        self.start_blink(GREEN_LED_PIN, RED_LED_PIN)
+        self.start_blink(GREEN_LED, RED_LED)
     end
 
     def handle_blink()
@@ -131,22 +132,22 @@ class BallGame
         self.blink_step = self.blink_step + 1
 
         if self.blink_step == 1
-            gpio.digital_write(self.blink_pin, 0)
+            tasmota.set_power(self.blink_power, false)
 
         elif self.blink_step == 2
-            gpio.digital_write(self.blink_pin, 1)
+            tasmota.set_power(self.blink_power, true)
 
         elif self.blink_step == 3
-            gpio.digital_write(self.blink_pin, 0)
+            tasmota.set_power(self.blink_power, false)
 
         elif self.blink_step == 4
-            gpio.digital_write(self.blink_pin, 1)
+            tasmota.set_power(self.blink_power, true)
 
         elif self.blink_step == 5
-            gpio.digital_write(self.blink_pin, 0)
+            tasmota.set_power(self.blink_power, false)
 
         elif self.blink_step >= 6
-            gpio.digital_write(self.blink_pin, 0)
+            tasmota.set_power(self.blink_power, false)
             self.blink_active = false
 
             tasmota.cmd("State")
@@ -359,16 +360,13 @@ class BallGame
         self.topic = tasmota.cmd("Topic")["Topic"]
         self.switch_state = gpio.digital_read(SWITCH_PIN)
 
-        gpio.pin_mode(RED_LED_PIN, gpio.OUTPUT)
-        gpio.pin_mode(GREEN_LED_PIN, gpio.OUTPUT)
-
-        gpio.digital_write(RED_LED_PIN, 0)
-        gpio.digital_write(GREEN_LED_PIN, 0)
-
         self.blink_active = false
-        self.blink_pin = RED_LED_PIN
+        self.blink_power = RED_LED
         self.blink_step = 0
         self.blink_last_time = tasmota.millis()
+
+        tasmota.set_power(RED_LED, false)
+        tasmota.set_power(GREEN_LED, false)
 
         self.rx_buffer = []
         self.pn532_state = 0
