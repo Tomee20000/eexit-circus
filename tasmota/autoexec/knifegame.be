@@ -2,15 +2,10 @@ import math
 import mqtt
 
 var RED = 0xFF0000
-var GREEN = 0x027821
+var GREEN = 0x013C10
 var BLUE = 0x0000FF
 var YELLOW = 0xFFFF00
 var WHITE = 0xFFFFFF
-
-var RED_GAMMA = 16711680
-var GREEN_GAMMA = 65280
-var BLUE_GAMMA = 255
-var YELLOW_GAMMA = 16776960
 
 var HOLE1 = 19
 var HOLE2 = 14
@@ -35,10 +30,10 @@ var LED_MAP = {
 }
 
 var LED_SOLUTION = {
-    RED_GAMMA : [0,1,2],
-    GREEN_GAMMA : [22,20,18],
-    BLUE_GAMMA : [3,16,17],
-    YELLOW_GAMMA : [9,10,23]
+    RED : [0,1,2],
+    GREEN : [22,20,18],
+    BLUE : [3,16,17],
+    YELLOW : [9,10,23]
 }
 
 class KnifeGame
@@ -48,8 +43,18 @@ class KnifeGame
     var enable, stable_cnt, last_input, triggered
 
     def init()
-        self.strip = Leds(24, gpio.pin(gpio.WS2812, 3))
-        self.rnd = [4,5,6,7,8,11,12,13,14,15,19,21]
+        self.strip = Leds(
+            24,
+            gpio.pin(gpio.WS2812, 3)
+        )
+
+        self.strip.set_gamma(false)
+
+        self.rnd = [
+            4,5,6,7,8,11,
+            12,13,14,15,19,21
+        ]
+
         self.color_map = [
             18,21,22,13,19,20,
             3,4,16,15,17,14,
@@ -66,18 +71,21 @@ class KnifeGame
         self.hole7 = false
         self.hole8 = false
         self.hole9 = false
-        self.enable = false
 
+        self.enable = false
         self.stable_cnt = 0
         self.last_input = 0
         self.triggered = 0
 
         self.strip.clear()
+        self.strip.show()
+
         math.srand(tasmota.millis())
 
         for i: 0..11
             var j = math.rand() % 12
             var tmp = self.rnd[i]
+
             self.rnd[i] = self.rnd[j]
             self.rnd[j] = tmp
         end
@@ -94,37 +102,85 @@ class KnifeGame
 
     def led_off()
         self.strip.clear()
+        self.strip.show()
+
         tasmota.resp_cmnd("Led off")
     end
 
     def color_init()
         for i: 0..5
-            self.strip.set_pixel_color(self.color_map[i], RED, 255)
-            self.strip.set_pixel_color(self.color_map[i + 6], YELLOW, 255)
-            self.strip.set_pixel_color(self.color_map[i + 12], BLUE, 255)
-            self.strip.set_pixel_color(self.color_map[i + 18], GREEN, 255)
+            self.strip.set_pixel_color(
+                self.color_map[i],
+                RED,
+                255
+            )
+
+            self.strip.set_pixel_color(
+                self.color_map[i + 6],
+                YELLOW,
+                255
+            )
+
+            self.strip.set_pixel_color(
+                self.color_map[i + 12],
+                BLUE,
+                255
+            )
+
+            self.strip.set_pixel_color(
+                self.color_map[i + 18],
+                GREEN,
+                255
+            )
         end
 
         self.strip.show()
 
-        tasmota.resp_cmnd("Colors initialized")
+        tasmota.resp_cmnd(
+            "Colors initialized"
+        )
     end
 
     def color_init_rnd()
         for i: 0..self.strip.pixel_count()-1
-            self.strip.set_pixel_color(i, WHITE, 255)
+            self.strip.set_pixel_color(
+                i,
+                WHITE,
+                255
+            )
         end
 
         for i: 0..2
-            self.strip.set_pixel_color(self.rnd[i], RED, 255)
-            self.strip.set_pixel_color(self.rnd[i + 3], YELLOW, 255)
-            self.strip.set_pixel_color(self.rnd[i + 6], BLUE, 255)
-            self.strip.set_pixel_color(self.rnd[i + 9], GREEN, 255)
+            self.strip.set_pixel_color(
+                self.rnd[i],
+                RED,
+                255
+            )
+
+            self.strip.set_pixel_color(
+                self.rnd[i + 3],
+                YELLOW,
+                255
+            )
+
+            self.strip.set_pixel_color(
+                self.rnd[i + 6],
+                BLUE,
+                255
+            )
+
+            self.strip.set_pixel_color(
+                self.rnd[i + 9],
+                GREEN,
+                255
+            )
         end
 
         self.strip.show()
 
-        tasmota.resp_cmnd("Colors initialized randomly")
+        tasmota.resp_cmnd(
+            "Colors initialized randomly"
+        )
     end
 
     def rotate(idx)
@@ -140,6 +196,7 @@ class KnifeGame
 
         for i: 0..(ps-1)
             tmp[i] = buf[ia + i]
+
             buf[ia + i] = buf[ib + i]
             buf[ib + i] = buf[ic + i]
             buf[ic + i] = buf[id + i]
@@ -149,35 +206,41 @@ class KnifeGame
         self.strip.dirty()
         self.strip.show()
 
-        tasmota.resp_cmnd("Block " .. idx .. " rotated (reverse).")
+        tasmota.resp_cmnd(
+            "Block " ..
+            idx ..
+            " rotated (reverse)."
+        )
     end
 
     def solution_check()
-        var solved = true
-
         for i: 0..2
-            solved = solved &&
-                self.strip.get_pixel_color(
-                    LED_SOLUTION[RED_GAMMA][i]
-                ) == RED_GAMMA
+            if self.strip.get_pixel_color(
+                LED_SOLUTION[RED][i]
+            ) != RED
+                return false
+            end
 
-            solved = solved &&
-                self.strip.get_pixel_color(
-                    LED_SOLUTION[GREEN_GAMMA][i]
-                ) == GREEN_GAMMA
+            if self.strip.get_pixel_color(
+                LED_SOLUTION[GREEN][i]
+            ) != GREEN
+                return false
+            end
 
-            solved = solved &&
-                self.strip.get_pixel_color(
-                    LED_SOLUTION[BLUE_GAMMA][i]
-                ) == BLUE_GAMMA
+            if self.strip.get_pixel_color(
+                LED_SOLUTION[BLUE][i]
+            ) != BLUE
+                return false
+            end
 
-            solved = solved &&
-                self.strip.get_pixel_color(
-                    LED_SOLUTION[YELLOW_GAMMA][i]
-                ) == YELLOW_GAMMA
+            if self.strip.get_pixel_color(
+                LED_SOLUTION[YELLOW][i]
+            ) != YELLOW
+                return false
+            end
         end
 
-        return solved
+        return true
     end
 
     def game_solved()
@@ -189,7 +252,9 @@ class KnifeGame
         )
 
         print("Game solved")
-        print('MQTT: CKNIFEGAME = {"data":"SOLVED"}')
+        print(
+            'MQTT: CKNIFEGAME = {"data":"SOLVED"}'
+        )
     end
 
     def every_50ms()
@@ -219,19 +284,27 @@ class KnifeGame
             current = 9
         end
 
-        if current != 0 && current == self.last_input
+        if current != 0 &&
+           current == self.last_input
             self.stable_cnt += 1
         else
             self.stable_cnt = 1
             self.last_input = current
         end
 
-        if self.stable_cnt == 10 && current != 0
-            if !self.triggered || self.triggered != current
+        if self.stable_cnt == 10 &&
+           current != 0
+
+            if !self.triggered ||
+               self.triggered != current
+
                 self.triggered = current
                 self.rotate(current)
             end
-        elif self.stable_cnt == 30 && current != 0
+
+        elif self.stable_cnt == 30 &&
+             current != 0
+
             self.stable_cnt = 1
             self.triggered = 0
         end
@@ -248,7 +321,9 @@ end
 
 var knife_game_driver = KnifeGame()
 
-tasmota.add_driver(knife_game_driver)
+tasmota.add_driver(
+    knife_game_driver
+)
 
 tasmota.add_cmd(
     "enable",
@@ -272,7 +347,8 @@ tasmota.add_cmd(
 
 tasmota.add_cmd(
     "rotate",
-    /cmd, i, idx -> knife_game_driver.rotate(number(idx))
+    /cmd, i, idx ->
+        knife_game_driver.rotate(number(idx))
 )
 
 print("KnifeGame driver loaded")

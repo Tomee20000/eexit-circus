@@ -1,10 +1,14 @@
+import mqtt
+
 # ---------------- CONFIG ----------------
 
-var SOLUTION = [3, 5, 1, 4, 2]     # sorrend: 1..5
-var BRIGHTNESS = 100               # PWM fényerő
-var BLINK_MS = 250                 # villogás sebessége ms
-var DEMO_BLINKS = 15               # minden villogás ennyi villanás
-var WIN_BLINKS = 3                 # nyerési villogás
+var MQTT_TOPIC = "CCLOWNGAME"
+
+var SOLUTION = [3, 5, 1, 4, 2]
+var BRIGHTNESS = 50
+var BLINK_MS = 250
+var DEMO_BLINKS = 15
+var WIN_BLINKS = 3
 
 # ---------------- GPIO ----------------
 
@@ -35,16 +39,16 @@ class Clowngame
     def init()
         self.enable = false
         self.step = 0
-        self.state = "idle"       # idle / demo / blinking / win
+        self.state = "idle"
         self.blink_id = 0
         self.active_clown = nil
 
         self.buttons = [BUTTON1, BUTTON2, BUTTON3, BUTTON4, BUTTON5]
-        self.noses   = [NOSE1, NOSE2, NOSE3, NOSE4, NOSE5]
-        self.eyes    = [EYE1, EYE2, EYE3, EYE4, EYE5]
+        self.noses = [NOSE1, NOSE2, NOSE3, NOSE4, NOSE5]
+        self.eyes = [EYE1, EYE2, EYE3, EYE4, EYE5]
 
         self.last_buttons = [false, false, false, false, false]
-        self.last_noses   = [false, false, false, false, false]
+        self.last_noses = [false, false, false, false, false]
 
         self.all_off()
     end
@@ -61,13 +65,11 @@ class Clowngame
             var bp = !gpio.digital_read(self.buttons[i])
             var np = !gpio.digital_read(self.noses[i])
 
-            # új gombnyomás
             if ev == nil && bp && !self.last_buttons[i]
                 ev = "button"
                 ev_i = i
             end
 
-            # új orrnyomás
             if ev == nil && np && !self.last_noses[i]
                 ev = "nose"
                 ev_i = i
@@ -94,7 +96,6 @@ class Clowngame
             return nil
         end
 
-        # Villogás közben saját gomb újraindít, más gomb reset
         if self.state == "blinking"
             if i == self.active_clown
                 self.start_step(i)
@@ -104,7 +105,6 @@ class Clowngame
             return nil
         end
 
-        # Demo közben játék elején bármelyik gomb mutatható
         if self.state == "demo"
             if self.step == 0
                 if i == self.expected()
@@ -118,7 +118,6 @@ class Clowngame
             return nil
         end
 
-        # Tanuló mód csak játék elején
         if self.step == 0 && i != self.expected()
             self.demo_blink(i)
             return nil
@@ -132,8 +131,10 @@ class Clowngame
     end
 
     def nose_pressed(i)
-        # Orrt csak akkor fogadunk el, ha a hozzá tartozó szem éppen villog
-        if self.state == "blinking" && i == self.active_clown && i == self.expected()
+        if self.state == "blinking" &&
+           i == self.active_clown &&
+           i == self.expected()
+
             self.blink_id = self.blink_id + 1
             self.step = self.step + 1
             self.state = "idle"
@@ -153,13 +154,21 @@ class Clowngame
     def start_step(i)
         self.state = "blinking"
         self.active_clown = i
-        self.blink(self.eyes[i], DEMO_BLINKS * 2, "blinking")
+        self.blink(
+            self.eyes[i],
+            DEMO_BLINKS * 2,
+            "blinking"
+        )
     end
 
     def demo_blink(i)
         self.state = "demo"
         self.active_clown = i
-        self.blink(self.eyes[i], DEMO_BLINKS * 2, "demo")
+        self.blink(
+            self.eyes[i],
+            DEMO_BLINKS * 2,
+            "demo"
+        )
     end
 
     def blink(eye, count, mode)
@@ -171,7 +180,13 @@ class Clowngame
             self.show_solved()
         end
 
-        self._blink_step(eye, 0, count, mode, self.blink_id)
+        self._blink_step(
+            eye,
+            0,
+            count,
+            mode,
+            self.blink_id
+        )
     end
 
     def _blink_step(eye, n, count, mode, id)
@@ -183,7 +198,6 @@ class Clowngame
             gpio.set_pwm(eye, 0)
             self.show_solved()
 
-            # Lejárt: nem várunk orrot, újra gomb kell
             if self.state == mode
                 self.state = "idle"
                 self.active_clown = nil
@@ -194,9 +208,22 @@ class Clowngame
         end
 
         self.show_solved()
-        gpio.set_pwm(eye, (n % 2 == 0) ? BRIGHTNESS : 0)
 
-        tasmota.set_timer(BLINK_MS, / -> self._blink_step(eye, n + 1, count, mode, id))
+        gpio.set_pwm(
+            eye,
+            (n % 2 == 0) ? BRIGHTNESS : 0
+        )
+
+        tasmota.set_timer(
+            BLINK_MS,
+            / -> self._blink_step(
+                eye,
+                n + 1,
+                count,
+                mode,
+                id
+            )
+        )
     end
 
     def show_solved()
@@ -205,8 +232,27 @@ class Clowngame
         end
 
         for s: 0..(self.step - 1)
-            gpio.set_pwm(self.eyes[SOLUTION[s] - 1], BRIGHTNESS)
+            gpio.set_pwm(
+                self.eyes[SOLUTION[s] - 1],
+                BRIGHTNESS
+            )
         end
+    end
+
+    def publish_solved()
+        var payload = '{"data":"SOLVED"}'
+
+        mqtt.publish(
+            MQTT_TOPIC,
+            payload
+        )
+
+        print(
+            "MQTT: " ..
+            MQTT_TOPIC ..
+            " = " ..
+            payload
+        )
     end
 
     def reset_game()
@@ -223,9 +269,19 @@ class Clowngame
         self.step = 0
         self.active_clown = nil
         self.blink_id = self.blink_id + 1
+
+        self.publish_solved()
+
         self.all_off()
         self.read_inputs()
-        tasmota.set_timer(BLINK_MS, / -> self.win_blink(0, self.blink_id))
+
+        tasmota.set_timer(
+            BLINK_MS,
+            / -> self.win_blink(
+                0,
+                self.blink_id
+            )
+        )
     end
 
     def win_blink(n, id)
@@ -240,25 +296,45 @@ class Clowngame
             return nil
         end
 
-        var v = (n % 2 == 0) ? BRIGHTNESS : 0
+        var v =
+            (n % 2 == 0) ? BRIGHTNESS : 0
 
         for i: 0..4
-            gpio.set_pwm(self.eyes[i], v)
+            gpio.set_pwm(
+                self.eyes[i],
+                v
+            )
         end
 
-        tasmota.set_timer(BLINK_MS, / -> self.win_blink(n + 1, id))
+        tasmota.set_timer(
+            BLINK_MS,
+            / -> self.win_blink(
+                n + 1,
+                id
+            )
+        )
     end
 
     def all_off()
         for i: 0..4
-            gpio.set_pwm(self.eyes[i], 0)
+            gpio.set_pwm(
+                self.eyes[i],
+                0
+            )
         end
     end
 
     def read_inputs()
         for i: 0..4
-            self.last_buttons[i] = !gpio.digital_read(self.buttons[i])
-            self.last_noses[i] = !gpio.digital_read(self.noses[i])
+            self.last_buttons[i] =
+                !gpio.digital_read(
+                    self.buttons[i]
+                )
+
+            self.last_noses[i] =
+                !gpio.digital_read(
+                    self.noses[i]
+                )
         end
     end
 
@@ -266,24 +342,41 @@ class Clowngame
         self.enable = true
         self.reset_game()
         self.read_inputs()
-        tasmota.resp_cmnd("Game enabled")
+
+        tasmota.resp_cmnd(
+            "Game enabled"
+        )
     end
 
     def disable_game()
         self.enable = false
         self.reset_game()
         self.read_inputs()
-        tasmota.resp_cmnd("Game disabled")
+
+        tasmota.resp_cmnd(
+            "Game disabled"
+        )
     end
 end
 
 var clowngamedriver = Clowngame()
-tasmota.add_driver(clowngamedriver)
 
-tasmota.add_cmd("enable", / -> clowngamedriver.enable_game())
-tasmota.add_cmd("disable", / -> clowngamedriver.disable_game())
+tasmota.add_driver(
+    clowngamedriver
+)
+
+tasmota.add_cmd(
+    "enable",
+    / -> clowngamedriver.enable_game()
+)
+
+tasmota.add_cmd(
+    "disable",
+    / -> clowngamedriver.disable_game()
+)
 
 print("Clowngame driver loaded")
+print("MQTT topic: CCLOWNGAME")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")

@@ -22,7 +22,6 @@ var FAST_MS = 7
 var HOME_MS = 10
 var RAMP_STEPS = 150
 
-# Maximum ennyi lepest mehet home kereses kozben
 var HOME_MAX_STEPS = 5000
 
 var DIR_INVERT = true
@@ -118,6 +117,32 @@ class CylinderDriver
         tasmota.resp_cmnd("Cylinder locked")
     end
 
+    def lock_and_publish(position)
+        tasmota.set_power(LAUNLOCK, false)
+        tasmota.set_power(LALOCK, true)
+
+        print(
+            "Cylinder locking before publishing pos" ..
+            position
+        )
+
+        tasmota.set_timer(
+            3000,
+            / -> self._lock_done_publish(position)
+        )
+    end
+
+    def _lock_done_publish(position)
+        tasmota.set_power(LALOCK, false)
+
+        self.publish_position(position)
+
+        print(
+            "Cylinder locked, position published: " ..
+            position
+        )
+    end
+
     def unlock(cmd, idx)
         tasmota.set_power(LALOCK, false)
         tasmota.set_power(LAUNLOCK, true)
@@ -125,6 +150,7 @@ class CylinderDriver
         tasmota.delay(3000)
 
         tasmota.set_power(LAUNLOCK, false)
+
         tasmota.resp_cmnd("Cylinder unlocked")
     end
 
@@ -267,19 +293,31 @@ class CylinderDriver
         end
 
         if p == self.actual_position
-            if self.pending_position >= 0
+            if do_lock
+                if self.pending_position >= 0
+                    var position =
+                        self.pending_position
+
+                    self.pending_position = -1
+
+                    tasmota.set_timer(
+                        1000,
+                        / -> self.lock_and_publish(
+                            position
+                        )
+                    )
+                else
+                    tasmota.set_timer(
+                        1000,
+                        / -> self.lock(nil, nil)
+                    )
+                end
+            elif self.pending_position >= 0
                 self.publish_position(
                     self.pending_position
                 )
 
                 self.pending_position = -1
-            end
-
-            if do_lock
-                tasmota.set_timer(
-                    1000,
-                    / -> self.lock(nil, nil)
-                )
             end
 
             return
@@ -357,19 +395,31 @@ class CylinderDriver
 
         self._stop_loop()
 
-        if self.pending_position >= 0
+        if self.lock_after_move
+            if self.pending_position >= 0
+                var position =
+                    self.pending_position
+
+                self.pending_position = -1
+
+                tasmota.set_timer(
+                    1000,
+                    / -> self.lock_and_publish(
+                        position
+                    )
+                )
+            else
+                tasmota.set_timer(
+                    1000,
+                    / -> self.lock(nil, nil)
+                )
+            end
+        elif self.pending_position >= 0
             self.publish_position(
                 self.pending_position
             )
 
             self.pending_position = -1
-        end
-
-        if self.lock_after_move
-            tasmota.set_timer(
-                1000,
-                / -> self.lock(nil, nil)
-            )
         end
 
         tasmota.resp_cmnd(
@@ -432,15 +482,13 @@ class CylinderDriver
 
             self._stop_loop()
 
-            self.publish_position(0)
-
             tasmota.set_timer(
                 1250,
-                / -> self.lock(nil, nil)
+                / -> self.lock_and_publish(0)
             )
 
             tasmota.resp_cmnd(
-                "Homing done"
+                "Homing done, locking before publish"
             )
         end
     end
@@ -627,6 +675,7 @@ tasmota.add_cmd(
 print("Cylinder driver loaded")
 print("Only positive motor movement enabled")
 print("MQTT topic: CCYLINDER/pos")
+print("Position is published after locking")
 print("------------------------------------------------")
 print("Commands:")
 print("lock")
