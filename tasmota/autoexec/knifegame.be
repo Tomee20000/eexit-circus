@@ -2,10 +2,11 @@ import math
 import mqtt
 
 var RED = 0xFF0000
-var GREEN = 0x013C10
+var GREEN = 0x027821
 var BLUE = 0x0000FF
 var YELLOW = 0xFFFF00
 var WHITE = 0xFFFFFF
+var OFF = 0x000000
 
 var HOLE1 = 19
 var HOLE2 = 14
@@ -29,17 +30,13 @@ var LED_MAP = {
     9 : [15,17,18,19]
 }
 
-var LED_SOLUTION = {
-    RED : [0,1,2],
-    GREEN : [22,20,18],
-    BLUE : [3,16,17],
-    YELLOW : [9,10,23]
-}
+var RED_SOLUTION = [0,1,2]
+var GREEN_SOLUTION = [22,20,18]
+var BLUE_SOLUTION = [3,16,17]
+var YELLOW_SOLUTION = [9,10,23]
 
 class KnifeGame
-    var strip, color_map, rnd
-    var hole1, hole2, hole3, hole4, hole5
-    var hole6, hole7, hole8, hole9
+    var strip, color_map, color_state, rnd
     var enable, stable_cnt, last_input, triggered
 
     def init()
@@ -47,8 +44,6 @@ class KnifeGame
             24,
             gpio.pin(gpio.WS2812, 3)
         )
-
-        self.strip.set_gamma(false)
 
         self.rnd = [
             4,5,6,7,8,11,
@@ -62,15 +57,12 @@ class KnifeGame
             0,1,2,5,6,7
         ]
 
-        self.hole1 = false
-        self.hole2 = false
-        self.hole3 = false
-        self.hole4 = false
-        self.hole5 = false
-        self.hole6 = false
-        self.hole7 = false
-        self.hole8 = false
-        self.hole9 = false
+        self.color_state = [
+            OFF,OFF,OFF,OFF,OFF,OFF,
+            OFF,OFF,OFF,OFF,OFF,OFF,
+            OFF,OFF,OFF,OFF,OFF,OFF,
+            OFF,OFF,OFF,OFF,OFF,OFF
+        ]
 
         self.enable = false
         self.stable_cnt = 0
@@ -104,33 +96,43 @@ class KnifeGame
         self.strip.clear()
         self.strip.show()
 
+        for i: 0..23
+            self.color_state[i] = OFF
+        end
+
         tasmota.resp_cmnd("Led off")
+    end
+
+    def set_color(index, color)
+        self.strip.set_pixel_color(
+            index,
+            color,
+            255
+        )
+
+        self.color_state[index] = color
     end
 
     def color_init()
         for i: 0..5
-            self.strip.set_pixel_color(
+            self.set_color(
                 self.color_map[i],
-                RED,
-                255
+                RED
             )
 
-            self.strip.set_pixel_color(
+            self.set_color(
                 self.color_map[i + 6],
-                YELLOW,
-                255
+                YELLOW
             )
 
-            self.strip.set_pixel_color(
+            self.set_color(
                 self.color_map[i + 12],
-                BLUE,
-                255
+                BLUE
             )
 
-            self.strip.set_pixel_color(
+            self.set_color(
                 self.color_map[i + 18],
-                GREEN,
-                255
+                GREEN
             )
         end
 
@@ -142,37 +144,32 @@ class KnifeGame
     end
 
     def color_init_rnd()
-        for i: 0..self.strip.pixel_count()-1
-            self.strip.set_pixel_color(
+        for i: 0..23
+            self.set_color(
                 i,
-                WHITE,
-                255
+                WHITE
             )
         end
 
         for i: 0..2
-            self.strip.set_pixel_color(
+            self.set_color(
                 self.rnd[i],
-                RED,
-                255
+                RED
             )
 
-            self.strip.set_pixel_color(
+            self.set_color(
                 self.rnd[i + 3],
-                YELLOW,
-                255
+                YELLOW
             )
 
-            self.strip.set_pixel_color(
+            self.set_color(
                 self.rnd[i + 6],
-                BLUE,
-                255
+                BLUE
             )
 
-            self.strip.set_pixel_color(
+            self.set_color(
                 self.rnd[i + 9],
-                GREEN,
-                255
+                GREEN
             )
         end
 
@@ -187,14 +184,19 @@ class KnifeGame
         var buf = self.strip.pixels_buffer()
         var ps = self.strip.pixel_size()
 
-        var ia = LED_MAP[idx][0] * ps
-        var ib = LED_MAP[idx][1] * ps
-        var ic = LED_MAP[idx][2] * ps
-        var id = LED_MAP[idx][3] * ps
+        var a = LED_MAP[idx][0]
+        var b = LED_MAP[idx][1]
+        var c = LED_MAP[idx][2]
+        var d = LED_MAP[idx][3]
+
+        var ia = a * ps
+        var ib = b * ps
+        var ic = c * ps
+        var id = d * ps
 
         var tmp = [0,0,0]
 
-        for i: 0..(ps-1)
+        for i: 0..(ps - 1)
             tmp[i] = buf[ia + i]
 
             buf[ia + i] = buf[ib + i]
@@ -202,6 +204,13 @@ class KnifeGame
             buf[ic + i] = buf[id + i]
             buf[id + i] = tmp[i]
         end
+
+        var color_tmp = self.color_state[a]
+
+        self.color_state[a] = self.color_state[b]
+        self.color_state[b] = self.color_state[c]
+        self.color_state[c] = self.color_state[d]
+        self.color_state[d] = color_tmp
 
         self.strip.dirty()
         self.strip.show()
@@ -215,27 +224,27 @@ class KnifeGame
 
     def solution_check()
         for i: 0..2
-            if self.strip.get_pixel_color(
-                LED_SOLUTION[RED][i]
-            ) != RED
+            if self.color_state[
+                RED_SOLUTION[i]
+            ] != RED
                 return false
             end
 
-            if self.strip.get_pixel_color(
-                LED_SOLUTION[GREEN][i]
-            ) != GREEN
+            if self.color_state[
+                GREEN_SOLUTION[i]
+            ] != GREEN
                 return false
             end
 
-            if self.strip.get_pixel_color(
-                LED_SOLUTION[BLUE][i]
-            ) != BLUE
+            if self.color_state[
+                BLUE_SOLUTION[i]
+            ] != BLUE
                 return false
             end
 
-            if self.strip.get_pixel_color(
-                LED_SOLUTION[YELLOW][i]
-            ) != YELLOW
+            if self.color_state[
+                YELLOW_SOLUTION[i]
+            ] != YELLOW
                 return false
             end
         end
@@ -286,6 +295,7 @@ class KnifeGame
 
         if current != 0 &&
            current == self.last_input
+
             self.stable_cnt += 1
         else
             self.stable_cnt = 1
@@ -348,7 +358,9 @@ tasmota.add_cmd(
 tasmota.add_cmd(
     "rotate",
     /cmd, i, idx ->
-        knife_game_driver.rotate(number(idx))
+        knife_game_driver.rotate(
+            number(idx)
+        )
 )
 
 print("KnifeGame driver loaded")

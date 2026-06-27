@@ -13,7 +13,7 @@ var MOTOR2 = 33
 var CONNECTED = 36
 var TRIGGER = 39
 
-var STEP = 20
+var STEP = 10
 var MAX_CHARGE = STEP * 5
 
 var DECAY_MS = 5000

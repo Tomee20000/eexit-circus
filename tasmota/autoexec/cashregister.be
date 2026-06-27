@@ -15,7 +15,7 @@ var DRAWER = 1
 var BEEPER = 0
 var SCREEN = 7
 
-var CORRECT_CODE = "5317813775385138"
+var CORRECT_CODE = "5317813775"
 
 class CashRegister
     var code, solved, enabled
@@ -143,7 +143,7 @@ class CashRegister
         self.next_wrong_beep = tasmota.millis(100)
 
         self.clear_wrong_active = true
-        self.clear_wrong_deadline = tasmota.millis(5000)
+        self.clear_wrong_deadline = tasmota.millis(2000)
     end
 
     def correct_code()

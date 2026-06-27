@@ -5,13 +5,14 @@ var OUT1 = 0
 class SawBox
     var counter, saw_in, strip, led_count
     var red_color, green_color, count_per_led
-    var finished
+    var started, finished
 
     def init()
         self.counter = 0
         self.saw_in = false
         self.led_count = 30
-        self.count_per_led = 25
+        self.count_per_led = 20
+        self.started = false
         self.finished = false
 
         self.red_color = self.rgb(255, 0, 0)
@@ -31,6 +32,7 @@ class SawBox
     def init_game()
         self.counter = 0
         self.saw_in = false
+        self.started = false
         self.finished = false
 
         self.strip.clear()
@@ -39,7 +41,27 @@ class SawBox
         tasmota.resp_cmnd("Initialized")
     end
 
+    def start_led()
+        if self.started
+            tasmota.resp_cmnd("Already started")
+            return
+        end
+
+        self.counter = self.count_per_led
+        self.saw_in = false
+        self.started = true
+        self.finished = false
+
+        self.draw_leds()
+
+        tasmota.resp_cmnd("First LED turned on")
+    end
+
     def fast_loop()
+        if !self.started || self.finished
+            return
+        end
+
         if !gpio.digital_read(SAW_PIN) && !self.saw_in
             self.counter += 1
             self.saw_in = true
@@ -54,24 +76,48 @@ class SawBox
         return (r << 16) | (g << 8) | b
     end
 
-    def every_50ms()
-        var target = self.count_per_led * self.led_count
-
-        if self.counter > 0 && self.counter < target
-            var led_index = 29 - (
-                self.counter / self.count_per_led - 1
+    def draw_leds()
+        var completed_leds =
+            1 +
+            int(
+                (
+                    self.counter
+                ) / self.count_per_led
             )
 
-            if led_index >= 0 && led_index < self.led_count
-                self.strip.set_pixel_color(
-                    led_index,
-                    self.red_color,
-                    255
-                )
-            end
+        if completed_leds > self.led_count
+            completed_leds = self.led_count
         end
 
-        if self.counter >= target && !self.finished
+        if completed_leds < 1
+            return
+        end
+
+        for i: 0..(completed_leds - 1)
+            var led_index =
+                self.led_count - 1 - i
+
+            self.strip.set_pixel_color(
+                led_index,
+                self.red_color,
+                255
+            )
+        end
+
+        self.strip.show()
+    end
+
+    def every_50ms()
+        if !self.started || self.finished
+            return
+        end
+
+        var target =
+            (self.led_count - 1) * self.count_per_led
+
+        self.draw_leds()
+
+        if self.counter >= target
             self.finished = true
 
             for i: 0..(self.led_count - 1)
@@ -82,15 +128,19 @@ class SawBox
                 )
             end
 
-            tasmota.set_power(OUT1, false)
-            print("SawBox finished, OUT1 turned off")
-        end
+            self.strip.show()
 
-        self.strip.show()
+            tasmota.set_power(OUT1, false)
+
+            print(
+                "SawBox finished, OUT1 turned off"
+            )
+        end
     end
 end
 
 var saw_box_driver = SawBox()
+
 tasmota.add_driver(saw_box_driver)
 
 tasmota.add_cmd(
@@ -98,8 +148,14 @@ tasmota.add_cmd(
     /cmd, idx -> saw_box_driver.init_game()
 )
 
+tasmota.add_cmd(
+    "startled",
+    /cmd, idx -> saw_box_driver.start_led()
+)
+
 print("SawBox driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("init - Initialize the game")
+print("startled - Turn on the first LED and start counting")
 print("--------------------------------------------------------------")

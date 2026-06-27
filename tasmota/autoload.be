@@ -1,88 +1,239 @@
-
 var autoload_module = module("autoload_module")
-
 
 autoload_module.folders = [
     "/lib",
     "/autoexec",
 ]
 
-autoload_module.update_files = [
-    "autoexec.be",
-    "preinit.be",
-    "autoload.be",
-    "autoexec/clawmachine.be",
-    "autoexec/cashregister.be",
-    "autoexec/ceilingled.be",
-    "autoexec/duckgame.be",
-    "autoexec/sign.be",
-    "autoexec/animalwheel.be",
-    "autoexec/cylinder.be",
-    "autoexec/knifegame.be",
-    "autoexec/elephant.be",
-    "autoexec/handgame.be",
-    "autoexec/handgame1.be",
-    "autoexec/sawbox.be",
-    "autoexec/ballgame.be",
-    "autoexec/clowngame.be",
-    "autoexec/lasergun.be",
-    "autoexec/bicycle.be",
+autoload_module.base_files = [
+    "/autoexec.be",
+    "/preinit.be",
+    "/autoload.be",
+]
+
+autoload_module.autoload_files_for_topic = {
+    "CCLAWMACHINE1":"/autoexec/clawmachine.be",
+    "CCASHREGISTER":"/autoexec/cashregister.be",
+    "CDUCKGAME":"/autoexec/duckgame.be",
+    "CCEILINGLED":"/autoexec/ceilingled.be",
+    "CSIGN":"/autoexec/sign.be",
+    "CANIMALWHEEL":"/autoexec/animalwheel.be",
+    "CCYLINDER":"/autoexec/cylinder.be",
+    "CKNIFEGAME":"/autoexec/knifegame.be",
+    "CELEPHANT":"/autoexec/elephant.be",
+    "CHANDGAME1":"/autoexec/handgame1.be",
+    "CHANDGAME2":"/autoexec/handgame.be",
+    "CHANDGAME3":"/autoexec/handgame.be",
+    "CHANDGAME4":"/autoexec/handgame.be",
+    "CBALLGAME1":"/autoexec/ballgame.be",
+    "CBALLGAME2":"/autoexec/ballgame.be",
+    "CBALLGAME3":"/autoexec/ballgame.be",
+    "CBALLGAME4":"/autoexec/ballgame.be",
+    "CBALLGAME5":"/autoexec/ballgame.be",
+    "CBALLGAME6":"/autoexec/ballgame.be",
+    "CSAWBOX":"/autoexec/sawbox.be",
+    "CCLOWNGAME":"/autoexec/clowngame.be",
+    "CLASERGUN":"/autoexec/lasergun.be",
+    "CSERVICE3":"/autoexec/bicycle.be",
+}
+
+autoload_module.extra_files_for_script = {
+    "/autoexec/handgame.be":["/lib/LibHandReader.be"],
+    "/autoexec/handgame1.be":["/lib/LibHandReader.be"],
+}
+
+autoload_module.game_files = [
+    "/autoexec/clawmachine.be",
+    "/autoexec/cashregister.be",
+    "/autoexec/ceilingled.be",
+    "/autoexec/duckgame.be",
+    "/autoexec/sign.be",
+    "/autoexec/animalwheel.be",
+    "/autoexec/cylinder.be",
+    "/autoexec/knifegame.be",
+    "/autoexec/elephant.be",
+    "/autoexec/handgame.be",
+    "/autoexec/handgame1.be",
+    "/autoexec/sawbox.be",
+    "/autoexec/ballgame.be",
+    "/autoexec/clowngame.be",
+    "/autoexec/lasergun.be",
+    "/autoexec/bicycle.be",
 ]
 
 autoload_module.lib_files = [
     "/lib/LibHandReader.be",
 ]
 
+autoload_module.fetch_url = "https://raw.githubusercontent.com/tomee20000/eexit-circus/refs/heads/main/tasmota"
 
-autoload_module.fetch_url = "https://raw.githubusercontent.com/tomee20000/eexit-circus/refs/heads/main/tasmota/"
+autoload_module.topic = def ()
+    return tasmota.cmd("Topic")["Topic"]
+end
 
-autoload_module.init = def ()
-    tasmota.add_cmd("UpdateScripts", autoload_module.update_scripts)
-    #tasmota.add_cmd("PurgeScripts", autoload_module.purge_scripts)
-    
-    for f: autoload_module.lib_files
-        import string
-        var is_loaded = load(f) 
-        var message
-        if (!is_loaded)
-            message = "%s is not present!"
-        else
-            message = "%s is loaded."
-        end
-        print (string.format(message, f))
+autoload_module.file_for_topic = def (topic)
+    try
+        return autoload_module.autoload_files_for_topic[topic]
+    except
+        return nil
     end
 end
 
+autoload_module.extra_files_for = def (script_file)
+    try
+        return autoload_module.extra_files_for_script[script_file]
+    except
+        return []
+    end
+end
+
+autoload_module.is_in_list = def (needle, list)
+    for item: list
+        if item == needle
+            return true
+        end
+    end
+    return false
+end
+
+autoload_module.unique_list = def (list)
+    var result = []
+    for item: list
+        if !autoload_module.is_in_list(item, result)
+            result = result + [item]
+        end
+    end
+    return result
+end
+
+autoload_module.files_for_topic = def (topic)
+    var script_file = autoload_module.file_for_topic(topic)
+    if script_file == nil
+        return nil
+    end
+
+    var files = autoload_module.base_files + [script_file] + autoload_module.extra_files_for(script_file)
+    return autoload_module.unique_list(files)
+end
+
+autoload_module.managed_files = def ()
+    return autoload_module.unique_list(autoload_module.game_files + autoload_module.lib_files)
+end
+
+autoload_module.init = def ()
+    tasmota.add_cmd("UpdateScripts", autoload_module.update_scripts)
+    tasmota.add_cmd("PurgeScripts", autoload_module.purge_scripts)
+    tasmota.add_cmd("Purge", autoload_module.purge_scripts)
+
+    var topic = autoload_module.topic()
+    var files = autoload_module.files_for_topic(topic)
+    if files == nil
+        import string
+        print(string.format("No script mapping for topic: %s", topic))
+        return
+    end
+
+    for f: files
+        if autoload_module.is_in_list(f, autoload_module.lib_files)
+            import string
+            var is_loaded = load(f)
+            var message
+            if !is_loaded
+                message = "%s is not present!"
+            else
+                message = "%s is loaded."
+            end
+            print(string.format(message, f))
+        end
+    end
+end
 
 autoload_module.fetch = def (url, filepath)
     import string
     try
         var file_size = tasmota.urlfetch(url, filepath)
-        if (file_size)
-            print (string.format("Downloaded %d bytes.", file_size)) 
+        if file_size
+            print(string.format("Downloaded %s: %d bytes.", filepath, file_size))
         end
         tasmota.yield()
     except .. as variable, message
-        print (string.format("Could not fetch %s. Error: %s (%s)", url, variable, message)) 
-    end 
+        print(string.format("Could not fetch %s. Error: %s (%s)", url, variable, message))
+    end
+end
+
+autoload_module.delete_file = def (filepath)
+    import string
+    try
+        tasmota.cmd("UfsDelete2 " + filepath)
+        print(string.format("Deleted if present: %s", filepath))
+        tasmota.yield()
+    except .. as variable, message
+        print(string.format("Could not delete %s. Error: %s (%s)", filepath, variable, message))
+    end
+end
+
+autoload_module.purge_unwanted = def (topic)
+    var wanted_files = autoload_module.files_for_topic(topic)
+    if wanted_files == nil
+        import string
+        print(string.format("Purge stopped. No script mapping for topic: %s", topic))
+        return false
+    end
+
+    for f: autoload_module.managed_files()
+        if !autoload_module.is_in_list(f, wanted_files)
+            autoload_module.delete_file(f)
+        end
+    end
+    return true
+end
+
+autoload_module.reload_scripts = def ()
+    tasmota.set_timer(500, / -> tasmota.cmd("BrRestart"))
 end
 
 autoload_module.update_scripts = def ()
     import path
+    import string
+
+    var topic = autoload_module.topic()
+    var files = autoload_module.files_for_topic(topic)
+    if files == nil
+        print(string.format("Update stopped. No script mapping for topic: %s", topic))
+        tasmota.resp_cmnd_error()
+        return
+    end
+
     for d: autoload_module.folders
         path.mkdir(d)
     end
-    
-    #fetch all berry component
-    var all_files = autoload_module.update_files + autoload_module.lib_files
+
     tasmota.resp_cmnd_done()
+
     try
-        for f: all_files
+        autoload_module.purge_unwanted(topic)
+
+        for f: files
             var url = autoload_module.fetch_url + f
             log(url)
             autoload_module.fetch(url, f)
         end
-    except
+
+        autoload_module.reload_scripts()
+    except .. as variable, message
+        print(string.format("UpdateScripts error: %s (%s)", variable, message))
+        tasmota.resp_cmnd_error()
+    end
+end
+
+autoload_module.purge_scripts = def ()
+    import string
+
+    var topic = autoload_module.topic()
+    if autoload_module.purge_unwanted(topic)
+        tasmota.resp_cmnd_done()
+        autoload_module.reload_scripts()
+    else
         tasmota.resp_cmnd_error()
     end
 end

@@ -1,3 +1,7 @@
+import mqtt
+
+var MQTT_TOPIC = "CCLAWMACHINE"
+
 var MOTOR_FB1 = 23
 var MOTOR_FB2 = 22
 var MOTOR_LR2 = 21
@@ -37,6 +41,12 @@ class ClawMachine
     def fast_loop()
         if !gpio.digital_read(COIN) && !self.is_coin_inserted
             self.enable_game()
+            var payload = '{"data":"ENABLED"}'
+
+            mqtt.publish(
+                MQTT_TOPIC,
+                payload
+            )
         end
     end
 
@@ -200,7 +210,6 @@ class ClawMachine
 
             print("claw animation finished")
             self.in_claw_animation = false
-            self.is_coin_inserted = false
         end
     end
 end
