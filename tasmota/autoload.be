@@ -1,17 +1,19 @@
-var autoload_module = module("autoload_module")
+var autoload = module("autoload")
 
-autoload_module.folders = [
+autoload.inited = false
+
+autoload.folders = [
     "/lib",
     "/autoexec",
 ]
 
-autoload_module.base_files = [
+autoload.base_files = [
     "/autoexec.be",
     "/preinit.be",
     "/autoload.be",
 ]
 
-autoload_module.autoload_files_for_topic = {
+autoload.autoload_files_for_topic = {
     "CCLAWMACHINE1":"/autoexec/clawmachine.be",
     "CCASHREGISTER":"/autoexec/cashregister.be",
     "CDUCKGAME":"/autoexec/duckgame.be",
@@ -37,12 +39,12 @@ autoload_module.autoload_files_for_topic = {
     "CSERVICE3":"/autoexec/bicycle.be",
 }
 
-autoload_module.extra_files_for_script = {
+autoload.extra_files_for_script = {
     "/autoexec/handgame.be":["/lib/LibHandReader.be"],
     "/autoexec/handgame1.be":["/lib/LibHandReader.be"],
 }
 
-autoload_module.game_files = [
+autoload.game_files = [
     "/autoexec/clawmachine.be",
     "/autoexec/cashregister.be",
     "/autoexec/ceilingled.be",
@@ -61,37 +63,37 @@ autoload_module.game_files = [
     "/autoexec/bicycle.be",
 ]
 
-autoload_module.lib_files = [
+autoload.lib_files = [
     "/lib/LibHandReader.be",
 ]
 
-autoload_module.fetch_url = "https://raw.githubusercontent.com/tomee20000/eexit-circus/refs/heads/main/tasmota"
+autoload.fetch_url = "https://raw.githubusercontent.com/tomee20000/eexit-circus/refs/heads/main/tasmota"
 
-autoload_module.topic = def ()
+autoload.topic = def ()
     return tasmota.cmd("Topic")["Topic"]
 end
 
-autoload_module.file_for_topic = def (topic)
+autoload.file_for_topic = def (topic)
     var result = nil
     try
-        result = autoload_module.autoload_files_for_topic[topic]
+        result = autoload.autoload_files_for_topic[topic]
     except .. as e, m
         result = nil
     end
     return result
 end
 
-autoload_module.extra_files_for = def (script_file)
+autoload.extra_files_for = def (script_file)
     var result = []
     try
-        result = autoload_module.extra_files_for_script[script_file]
+        result = autoload.extra_files_for_script[script_file]
     except .. as e, m
         result = []
     end
     return result
 end
 
-autoload_module.is_in_list = def (needle, items)
+autoload.is_in_items = def (needle, items)
     for item: items
         if item == needle
             return true
@@ -100,37 +102,42 @@ autoload_module.is_in_list = def (needle, items)
     return false
 end
 
-autoload_module.unique_list = def (items)
+autoload.unique_items = def (items)
     var result = []
     for item: items
-        if !autoload_module.is_in_list(item, result)
+        if !autoload.is_in_items(item, result)
             result = result + [item]
         end
     end
     return result
 end
 
-autoload_module.files_for_topic = def (topic)
-    var script_file = autoload_module.file_for_topic(topic)
+autoload.files_for_topic = def (topic)
+    var script_file = autoload.file_for_topic(topic)
     if script_file == nil
         return nil
     end
 
-    var files = autoload_module.base_files + [script_file] + autoload_module.extra_files_for(script_file)
-    return autoload_module.unique_list(files)
+    var files = autoload.base_files + [script_file] + autoload.extra_files_for(script_file)
+    return autoload.unique_items(files)
 end
 
-autoload_module.managed_files = def ()
-    return autoload_module.unique_list(autoload_module.game_files + autoload_module.lib_files)
+autoload.managed_files = def ()
+    return autoload.unique_items(autoload.game_files + autoload.lib_files)
 end
 
-autoload_module.init = def ()
-    tasmota.add_cmd("UpdateScripts", autoload_module.update_scripts)
-    tasmota.add_cmd("PurgeScripts", autoload_module.purge_scripts)
-    tasmota.add_cmd("Purge", autoload_module.purge_scripts)
+autoload.init = def ()
+    if autoload.inited
+        return
+    end
 
-    var topic = autoload_module.topic()
-    var files = autoload_module.files_for_topic(topic)
+    autoload.inited = true
+    tasmota.add_cmd("UpdateScripts", autoload.update_scripts)
+    tasmota.add_cmd("PurgeScripts", autoload.purge_scripts)
+    tasmota.add_cmd("Purge", autoload.purge_scripts)
+
+    var topic = autoload.topic()
+    var files = autoload.files_for_topic(topic)
     if files == nil
         import string
         print(string.format("No script mapping for topic: %s", topic))
@@ -138,7 +145,7 @@ autoload_module.init = def ()
     end
 
     for f: files
-        if autoload_module.is_in_list(f, autoload_module.lib_files)
+        if autoload.is_in_items(f, autoload.lib_files)
             import string
             var is_loaded = load(f)
             var message
@@ -152,7 +159,7 @@ autoload_module.init = def ()
     end
 end
 
-autoload_module.fetch = def (url, filepath)
+autoload.fetch = def (url, filepath)
     import string
     try
         var file_size = tasmota.urlfetch(url, filepath)
@@ -165,7 +172,7 @@ autoload_module.fetch = def (url, filepath)
     end
 end
 
-autoload_module.delete_file = def (filepath)
+autoload.delete_file = def (filepath)
     import string
     try
         tasmota.cmd("UfsDelete2 " + filepath)
@@ -176,68 +183,68 @@ autoload_module.delete_file = def (filepath)
     end
 end
 
-autoload_module.purge_unwanted = def (topic)
-    var wanted_files = autoload_module.files_for_topic(topic)
+autoload.purge_unwanted = def (topic)
+    var wanted_files = autoload.files_for_topic(topic)
     if wanted_files == nil
         import string
         print(string.format("Purge stopped. No script mapping for topic: %s", topic))
         return false
     end
 
-    for f: autoload_module.managed_files()
-        if !autoload_module.is_in_list(f, wanted_files)
-            autoload_module.delete_file(f)
+    for f: autoload.managed_files()
+        if !autoload.is_in_items(f, wanted_files)
+            autoload.delete_file(f)
         end
     end
     return true
 end
 
-autoload_module.reload_scripts = def ()
+autoload.reload_scripts = def ()
     tasmota.set_timer(500, / -> tasmota.cmd("BrRestart"))
 end
 
-autoload_module.update_scripts = def ()
+autoload.update_scripts = def ()
     import path
     import string
 
-    var topic = autoload_module.topic()
-    var files = autoload_module.files_for_topic(topic)
+    var topic = autoload.topic()
+    var files = autoload.files_for_topic(topic)
     if files == nil
         print(string.format("Update stopped. No script mapping for topic: %s", topic))
         tasmota.resp_cmnd_error()
         return
     end
 
-    for d: autoload_module.folders
+    for d: autoload.folders
         path.mkdir(d)
     end
 
     tasmota.resp_cmnd_done()
 
     try
-        autoload_module.purge_unwanted(topic)
+        autoload.purge_unwanted(topic)
 
         for f: files
-            var url = autoload_module.fetch_url + f
+            var url = autoload.fetch_url + f
             log(url)
-            autoload_module.fetch(url, f)
+            autoload.fetch(url, f)
         end
 
-        autoload_module.reload_scripts()
+        autoload.reload_scripts()
     except .. as e, m
         print(string.format("UpdateScripts error: %s (%s)", e, m))
         tasmota.resp_cmnd_error()
     end
 end
 
-autoload_module.purge_scripts = def ()
-    var topic = autoload_module.topic()
-    if autoload_module.purge_unwanted(topic)
+autoload.purge_scripts = def ()
+    var topic = autoload.topic()
+    if autoload.purge_unwanted(topic)
         tasmota.resp_cmnd_done()
-        autoload_module.reload_scripts()
+        autoload.reload_scripts()
     else
         tasmota.resp_cmnd_error()
     end
 end
 
-return autoload_module
+return autoload
