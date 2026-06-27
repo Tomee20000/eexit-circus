@@ -72,23 +72,27 @@ autoload_module.topic = def ()
 end
 
 autoload_module.file_for_topic = def (topic)
+    var result = nil
     try
-        return autoload_module.autoload_files_for_topic[topic]
-    except
-        return nil
+        result = autoload_module.autoload_files_for_topic[topic]
+    except .. as e, m
+        result = nil
     end
+    return result
 end
 
 autoload_module.extra_files_for = def (script_file)
+    var result = []
     try
-        return autoload_module.extra_files_for_script[script_file]
-    except
-        return []
+        result = autoload_module.extra_files_for_script[script_file]
+    except .. as e, m
+        result = []
     end
+    return result
 end
 
-autoload_module.is_in_list = def (needle, list)
-    for item: list
+autoload_module.is_in_list = def (needle, items)
+    for item: items
         if item == needle
             return true
         end
@@ -96,9 +100,9 @@ autoload_module.is_in_list = def (needle, list)
     return false
 end
 
-autoload_module.unique_list = def (list)
+autoload_module.unique_list = def (items)
     var result = []
-    for item: list
+    for item: items
         if !autoload_module.is_in_list(item, result)
             result = result + [item]
         end
@@ -156,8 +160,8 @@ autoload_module.fetch = def (url, filepath)
             print(string.format("Downloaded %s: %d bytes.", filepath, file_size))
         end
         tasmota.yield()
-    except .. as variable, message
-        print(string.format("Could not fetch %s. Error: %s (%s)", url, variable, message))
+    except .. as e, m
+        print(string.format("Could not fetch %s. Error: %s (%s)", url, e, m))
     end
 end
 
@@ -167,8 +171,8 @@ autoload_module.delete_file = def (filepath)
         tasmota.cmd("UfsDelete2 " + filepath)
         print(string.format("Deleted if present: %s", filepath))
         tasmota.yield()
-    except .. as variable, message
-        print(string.format("Could not delete %s. Error: %s (%s)", filepath, variable, message))
+    except .. as e, m
+        print(string.format("Could not delete %s. Error: %s (%s)", filepath, e, m))
     end
 end
 
@@ -220,15 +224,13 @@ autoload_module.update_scripts = def ()
         end
 
         autoload_module.reload_scripts()
-    except .. as variable, message
-        print(string.format("UpdateScripts error: %s (%s)", variable, message))
+    except .. as e, m
+        print(string.format("UpdateScripts error: %s (%s)", e, m))
         tasmota.resp_cmnd_error()
     end
 end
 
 autoload_module.purge_scripts = def ()
-    import string
-
     var topic = autoload_module.topic()
     if autoload_module.purge_unwanted(topic)
         tasmota.resp_cmnd_done()
