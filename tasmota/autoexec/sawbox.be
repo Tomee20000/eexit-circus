@@ -5,7 +5,7 @@ var OUT1 = 0
 class SawBox
     var counter, saw_in, strip, led_count
     var red_color, green_color, count_per_led
-    var started, finished
+    var started, finished, sound_started
 
     def init()
         self.counter = 0
@@ -14,6 +14,7 @@ class SawBox
         self.count_per_led = 20
         self.started = false
         self.finished = false
+        self.sound_started = false
 
         self.red_color = self.rgb(255, 0, 0)
         self.green_color = self.rgb(0, 255, 0)
@@ -34,6 +35,7 @@ class SawBox
         self.saw_in = false
         self.started = false
         self.finished = false
+        self.sound_started = false
 
         self.strip.clear()
         self.strip.show()
@@ -51,6 +53,7 @@ class SawBox
         self.saw_in = false
         self.started = true
         self.finished = false
+        self.sound_started = false
 
         self.draw_leds()
 
@@ -63,6 +66,12 @@ class SawBox
         end
 
         if !gpio.digital_read(SAW_PIN) && !self.saw_in
+            if !self.sound_started
+                self.sound_started = true
+                tasmota.cmd("i2sgain 100")
+                tasmota.cmd("i2splay mp3/saw.mp3")
+            end
+
             self.counter += 1
             self.saw_in = true
         end

@@ -194,6 +194,11 @@ class Handgame1
 
             elif self.elephant_color != COLOR_MAP[self.next_color]
                 if self.solving_started
+                    mqtt.publish(
+                        "CHANDGAME",
+                        '{"data":"WRONG"}'
+                    )
+
                     light.set({
                         "power":false,
                         "rgb":"FFFFFF"

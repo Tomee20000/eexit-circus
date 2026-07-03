@@ -90,6 +90,38 @@ class Clowngame
         return SOLUTION[self.step] - 1
     end
 
+    def publish_wrong()
+        var payload = '{"data":"WRONG"}'
+
+        mqtt.publish(
+            MQTT_TOPIC,
+            payload
+        )
+
+        print(
+            "MQTT: " ..
+            MQTT_TOPIC ..
+            " = " ..
+            payload
+        )
+    end
+
+    def publish_solved()
+        var payload = '{"data":"SOLVED"}'
+
+        mqtt.publish(
+            MQTT_TOPIC,
+            payload
+        )
+
+        print(
+            "MQTT: " ..
+            MQTT_TOPIC ..
+            " = " ..
+            payload
+        )
+    end
+
     def button_pressed(i)
         if self.state == "win"
             self.reset_game()
@@ -100,6 +132,7 @@ class Clowngame
             if i == self.active_clown
                 self.start_step(i)
             else
+                self.publish_wrong()
                 self.reset_game()
             end
             return nil
@@ -110,15 +143,18 @@ class Clowngame
                 if i == self.expected()
                     self.start_step(i)
                 else
+                    self.publish_wrong()
                     self.demo_blink(i)
                 end
             else
+                self.publish_wrong()
                 self.reset_game()
             end
             return nil
         end
 
         if self.step == 0 && i != self.expected()
+            self.publish_wrong()
             self.demo_blink(i)
             return nil
         end
@@ -126,6 +162,7 @@ class Clowngame
         if i == self.expected()
             self.start_step(i)
         else
+            self.publish_wrong()
             self.reset_game()
         end
     end
@@ -237,22 +274,6 @@ class Clowngame
                 BRIGHTNESS
             )
         end
-    end
-
-    def publish_solved()
-        var payload = '{"data":"SOLVED"}'
-
-        mqtt.publish(
-            MQTT_TOPIC,
-            payload
-        )
-
-        print(
-            "MQTT: " ..
-            MQTT_TOPIC ..
-            " = " ..
-            payload
-        )
     end
 
     def reset_game()
@@ -376,7 +397,6 @@ tasmota.add_cmd(
 )
 
 print("Clowngame driver loaded")
-print("MQTT topic: CCLOWNGAME")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")

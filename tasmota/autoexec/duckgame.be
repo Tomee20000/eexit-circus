@@ -31,6 +31,8 @@ var WAVE_AMPLITUDE = 60
 var SOLVED_TOPIC = "CDUCKGAME"
 var SOLVED_PAYLOAD = '{"data":"SOLVED"}'
 
+var SHOT_TOPIC = "CDUCKGAME"
+
 # =========================================================
 # SERIAL
 # =========================================================
@@ -452,6 +454,12 @@ class WaveDriver
         self.duck_anim[idx - 1] = true
         self.blink_state = true
 
+        mqtt.publish(
+            SHOT_TOPIC,
+            '{"data":"DUCK' .. idx .. 'SHOT"}',
+            false
+        )
+
         self.next_blink_ms =
             tasmota.millis() +
             BLINK_INTERVAL_MS
@@ -677,8 +685,6 @@ print("ledinit - reset LED state and internal flags")
 print("ledreset - clear shot/red LED states")
 print("duckshoot<n> - start red blinking animation behind duck<n> for 5 seconds")
 print("ldrstatus - show current LDR raw hit states")
-print("Solved topic: CDUCKGAME")
-print('Solved payload: {"data":"SOLVED"}')
 print("--------------------------------------------------------------")
 
 tasmota.cmd("homeall")

@@ -134,6 +134,11 @@ class CashRegister
     end
 
     def wrong_code()
+        mqtt.publish(
+            "CASHREGISTER",
+            '{"data":"WRONG"}'
+        )
+
         self.code = ""
 
         tasmota.cmd("DisplayText[zr]")
@@ -147,6 +152,11 @@ class CashRegister
     end
 
     def correct_code()
+        mqtt.publish(
+            "CASHREGISTER",
+            '{"data":"SOLVED"}'
+        )
+
         self.wrong_beeps_left = 0
         self.clear_wrong_active = false
 

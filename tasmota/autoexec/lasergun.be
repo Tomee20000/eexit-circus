@@ -92,6 +92,7 @@ class LaserGun
     end
 
     def shoot()
+        tasmota.cmd("i2splay mp3/shoot.mp3")
         self.down(false)
 
         self.shot_phase = 1
@@ -135,6 +136,8 @@ class LaserGun
 
         self.motor_off()
         self.leds()
+
+        tasmota.cmd("i2sgain 10")
     end
 
     def enable_game()

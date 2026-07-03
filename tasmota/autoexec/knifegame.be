@@ -309,6 +309,12 @@ class KnifeGame
                self.triggered != current
 
                 self.triggered = current
+
+                mqtt.publish(
+                    "cmnd/CANIMALWHEEL/i2splay",
+                    "mp3/wrong_ball.mp3"
+                )
+
                 self.rotate(current)
             end
 
