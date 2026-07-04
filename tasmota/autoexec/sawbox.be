@@ -8,12 +8,15 @@ var SAW_SOUND_TOPIC = "CSAWBOX/SOUND"
 var SAW_GAIN = 100
 var SAW_RESTART_MS = 83000
 
+var SAWING_TIMEOUT_MS = 300
+
 class SawBox
     var counter, saw_in, strip, led_count
     var red_color, green_color, count_per_led
     var started, finished
     var sound_started, sound_loud, sound_start
-    var quiet_ticks, last_sound_state
+    var last_sound_state
+    var last_pin_state, last_move_time
 
     def init()
         self.counter = 0
@@ -26,8 +29,10 @@ class SawBox
         self.sound_started = false
         self.sound_loud = false
         self.sound_start = 0
-        self.quiet_ticks = 0
         self.last_sound_state = ""
+
+        self.last_pin_state = gpio.digital_read(SAW_PIN)
+        self.last_move_time = 0
 
         self.red_color = self.rgb(255, 0, 0)
         self.green_color = self.rgb(0, 255, 0)
@@ -65,8 +70,10 @@ class SawBox
         self.sound_started = false
         self.sound_loud = false
         self.sound_start = 0
-        self.quiet_ticks = 0
         self.last_sound_state = ""
+
+        self.last_pin_state = gpio.digital_read(SAW_PIN)
+        self.last_move_time = 0
 
         tasmota.cmd("i2sstop")
         tasmota.cmd("i2sgain 0")
@@ -93,8 +100,10 @@ class SawBox
         self.sound_started = false
         self.sound_loud = false
         self.sound_start = 0
-        self.quiet_ticks = 0
         self.last_sound_state = ""
+
+        self.last_pin_state = gpio.digital_read(SAW_PIN)
+        self.last_move_time = 0
 
         tasmota.cmd("i2sstop")
         tasmota.cmd("i2sgain 0")
@@ -117,9 +126,9 @@ class SawBox
     def set_sound_loud()
         var now = tasmota.millis()
 
-        self.quiet_ticks = 0
+        if !self.sound_started ||
+           now - self.sound_start >= SAW_RESTART_MS
 
-        if !self.sound_started || now - self.sound_start >= SAW_RESTART_MS
             self.start_saw_sound()
         end
 
@@ -142,7 +151,7 @@ class SawBox
         self.sound_started = false
         self.sound_loud = false
         self.sound_start = 0
-        self.quiet_ticks = 0
+        self.last_move_time = 0
 
         tasmota.cmd("i2sstop")
         tasmota.cmd("i2sgain 0")
@@ -155,15 +164,18 @@ class SawBox
             return
         end
 
-        if !gpio.digital_read(SAW_PIN) && !self.saw_in
+        var state = gpio.digital_read(SAW_PIN)
+        var now = tasmota.millis()
+
+        if state != self.last_pin_state
+            self.last_pin_state = state
+            self.last_move_time = now
+
             self.set_sound_loud()
 
-            self.counter += 1
-            self.saw_in = true
-        end
-
-        if gpio.digital_read(SAW_PIN) && self.saw_in
-            self.saw_in = false
+            if state == 0
+                self.counter += 1
+            end
         end
     end
 
@@ -205,20 +217,20 @@ class SawBox
             return
         end
 
-        if self.sound_loud
-            if !gpio.digital_read(SAW_PIN)
-                self.quiet_ticks = 0
+        var now = tasmota.millis()
 
-                if tasmota.millis() - self.sound_start >= SAW_RESTART_MS
-                    self.start_saw_sound()
-                end
-            else
-                self.quiet_ticks += 1
+        if self.sound_loud &&
+           self.last_move_time > 0 &&
+           now - self.last_move_time >= SAWING_TIMEOUT_MS
 
-                if self.quiet_ticks >= 6
-                    self.set_sound_quiet()
-                end
-            end
+            self.set_sound_quiet()
+        end
+
+        if self.sound_loud &&
+           self.sound_started &&
+           now - self.sound_start >= SAW_RESTART_MS
+
+            self.start_saw_sound()
         end
 
         var target =
