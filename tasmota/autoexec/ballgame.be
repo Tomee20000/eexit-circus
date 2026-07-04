@@ -48,6 +48,7 @@ class BallGame
     var blink_power
     var blink_step
     var blink_last_time
+    var blink_max_step
 
     def find_ball(uid)
         var out = "NOT FOUND"
@@ -106,12 +107,13 @@ class BallGame
         end
     end
 
-    def start_blink(power, opposite_power)
+    def start_blink(power, opposite_power, max_step)
         tasmota.set_power(opposite_power, false)
         tasmota.set_power(power, false)
 
         self.blink_power = power
         self.blink_step = 0
+        self.blink_max_step = max_step
         self.blink_last_time = tasmota.millis()
         self.blink_active = true
 
@@ -119,11 +121,18 @@ class BallGame
     end
 
     def redblink()
-        self.start_blink(RED_LED, GREEN_LED)
+        self.start_blink(RED_LED, GREEN_LED, 5)
+        tasmota.resp_cmnd_done()
     end
 
     def greenblink()
-        self.start_blink(GREEN_LED, RED_LED)
+        self.start_blink(GREEN_LED, RED_LED, 5)
+        tasmota.resp_cmnd_done()
+    end
+
+    def solveblink()
+        self.start_blink(GREEN_LED, RED_LED, 1)
+        tasmota.resp_cmnd_done()
     end
 
     def handle_blink()
@@ -152,18 +161,12 @@ class BallGame
 
         elif self.blink_step == 5
             tasmota.set_power(self.blink_power, false)
+        end
+
+        if self.blink_step >= self.blink_max_step
+            tasmota.set_power(self.blink_power, false)
             self.blink_active = false
         end
-    end
-
-    def command_redblink(cmd, idx, payload)
-        self.redblink()
-        tasmota.resp_cmnd_done()
-    end
-
-    def command_greenblink(cmd, idx, payload)
-        self.greenblink()
-        tasmota.resp_cmnd_done()
     end
 
     def publish_switch(state)
@@ -365,6 +368,7 @@ class BallGame
         self.blink_active = false
         self.blink_power = RED_LED
         self.blink_step = 0
+        self.blink_max_step = 5
         self.blink_last_time = tasmota.millis()
 
         tasmota.set_power(RED_LED, false)
@@ -391,29 +395,37 @@ class BallGame
             bytes("55550000000000000000000000000000")
         )
 
-        tasmota.remove_cmd("RedBlink")
-        tasmota.remove_cmd("GreenBlink")
-
-        tasmota.add_cmd(
-            "RedBlink",
-            /cmd, idx, payload ->
-                self.command_redblink(cmd, idx, payload)
-        )
-
-        tasmota.add_cmd(
-            "GreenBlink",
-            /cmd, idx, payload ->
-                self.command_greenblink(cmd, idx, payload)
-        )
-
         mqtt.publish(self.topic .. "/BALL", "-")
 
         tasmota.add_fast_loop(
             / -> self.fast_loop()
         )
-
-        print("BallGame driver loaded")
     end
 end
 
-tasmota.add_driver(BallGame())
+var ball_game_driver = BallGame()
+
+tasmota.add_driver(ball_game_driver)
+
+tasmota.add_cmd(
+    "redblink",
+    / -> ball_game_driver.redblink()
+)
+
+tasmota.add_cmd(
+    "greenblink",
+    / -> ball_game_driver.greenblink()
+)
+
+tasmota.add_cmd(
+    "solveblink",
+    / -> ball_game_driver.solveblink()
+)
+
+print("BallGame driver loaded")
+print("--------------------------------------------------------------")
+print("Commands:")
+print("redblink - red led blink 3 times")
+print("greenblink - green led blink 3 times")
+print("solveblink - green led blink 1 time")
+print("--------------------------------------------------------------")

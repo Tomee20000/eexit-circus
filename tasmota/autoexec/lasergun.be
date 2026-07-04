@@ -1,5 +1,6 @@
 import gpio
 import mqtt
+import json
 
 # =========================================================
 # CONFIG
@@ -13,7 +14,7 @@ var MOTOR2 = 33
 var CONNECTED = 36
 var TRIGGER = 39
 
-var STEP = 10
+var STEP = 5
 var MAX_CHARGE = STEP * 5
 
 var DECAY_MS = 5000
@@ -21,6 +22,10 @@ var DECAY_MS = 5000
 var FORWARD1_MS = 35
 var BACK_MS = 50
 var FORWARD2_MS = 35
+
+var SAW_SOUND_TOPIC = "CSAWBOX/SOUND"
+var CRY_GAIN = 100
+var CRY_RESTART_MS = 29000
 
 
 # =========================================================
@@ -30,6 +35,7 @@ class LaserGun
 
     var enable, charge, last_msg, trigger_lock, decay, infinite
     var shot_phase, phase_start, led_update
+    var cry_started, cry_loud, cry_start
 
     def leds()
         if self.infinite
@@ -39,7 +45,10 @@ class LaserGun
         tasmota.set_power(LED0, true)
 
         for i: 1..LED_COUNT - 1
-            tasmota.set_power(LED0 + i, self.charge >= i * STEP)
+            tasmota.set_power(
+                LED0 + i,
+                self.charge >= i * STEP
+            )
         end
     end
 
@@ -61,7 +70,8 @@ class LaserGun
         end
 
         if self.charge >= STEP
-            self.charge = ((self.charge / STEP) - 1) * STEP
+            self.charge =
+                ((self.charge / STEP) - 1) * STEP
         else
             self.charge = 0
         end
@@ -92,12 +102,48 @@ class LaserGun
     end
 
     def shoot()
-        tasmota.cmd("i2splay mp3/shoot.mp3")
         self.down(false)
 
         self.shot_phase = 1
         self.phase_start = tasmota.millis()
         self.motor_forward()
+    end
+
+    def start_cry()
+        self.cry_started = true
+        self.cry_start = tasmota.millis()
+
+        tasmota.cmd("i2sgain " .. str(CRY_GAIN))
+        tasmota.cmd("i2splay mp3/cry.mp3")
+    end
+
+    def cry_on()
+        var now = tasmota.millis()
+
+        if !self.cry_started || now - self.cry_start >= CRY_RESTART_MS
+            self.start_cry()
+        end
+
+        if !self.cry_loud
+            self.cry_loud = true
+            tasmota.cmd("i2sgain " .. str(CRY_GAIN))
+        end
+    end
+
+    def cry_quiet()
+        if self.cry_loud
+            self.cry_loud = false
+            tasmota.cmd("i2sgain 0")
+        end
+    end
+
+    def cry_stop()
+        self.cry_started = false
+        self.cry_loud = false
+        self.cry_start = 0
+
+        tasmota.cmd("i2sstop")
+        tasmota.cmd("i2sgain 0")
     end
 
     def on_mqtt_message(topic, payload)
@@ -117,11 +163,36 @@ class LaserGun
                     self.led_update = true
                 end
             end
+
+            return
+        end
+
+        if topic == SAW_SOUND_TOPIC
+            var data = json.load(payload).find("data", nil)
+
+            if data == "LOUD"
+                self.cry_on()
+            elif data == "QUIET"
+                self.cry_quiet()
+            elif data == "STOP"
+                self.cry_stop()
+            end
+
+            return
         end
     end
 
     def init()
-        mqtt.subscribe("CLASERGUN/BCOUNTER", /t, idx, data, b -> self.on_mqtt_message(t, data))
+        mqtt.subscribe(
+            "CLASERGUN/BCOUNTER",
+            /t, idx, data, b -> self.on_mqtt_message(t, data)
+        )
+
+        mqtt.subscribe(
+            SAW_SOUND_TOPIC,
+            /t, idx, data, b -> self.on_mqtt_message(t, data)
+        )
+
         tasmota.add_fast_loop(/ -> self.fast_loop())
 
         self.enable = true
@@ -134,10 +205,14 @@ class LaserGun
         self.phase_start = 0
         self.led_update = false
 
+        self.cry_started = false
+        self.cry_loud = false
+        self.cry_start = 0
+
         self.motor_off()
         self.leds()
 
-        tasmota.cmd("i2sgain 10")
+        tasmota.cmd("i2sgain 0")
     end
 
     def enable_game()
@@ -166,6 +241,7 @@ class LaserGun
         self.led_update = false
         self.motor_off()
         self.leds_off()
+
         tasmota.resp_cmnd("Game disabled")
     end
 
@@ -195,13 +271,24 @@ class LaserGun
     end
 
     def every_50ms()
+        var now = tasmota.millis()
+
+        if self.cry_loud &&
+           self.cry_started &&
+           now - self.cry_start >= CRY_RESTART_MS
+
+            self.start_cry()
+        end
+
         if !self.enable
             return
         end
 
-        var now = tasmota.millis()
+        if self.decay &&
+           !self.infinite &&
+           self.charge > 0 &&
+           now - self.last_msg >= DECAY_MS
 
-        if self.decay && !self.infinite && self.charge > 0 && now - self.last_msg >= DECAY_MS
             self.down(true)
             self.last_msg = now
         end
@@ -210,19 +297,25 @@ class LaserGun
     def fast_loop()
         var now = tasmota.millis()
 
-        if self.shot_phase == 1 && now - self.phase_start >= FORWARD1_MS
+        if self.shot_phase == 1 &&
+           now - self.phase_start >= FORWARD1_MS
+
             self.shot_phase = 2
             self.phase_start = now
             self.motor_back()
         end
 
-        if self.shot_phase == 2 && now - self.phase_start >= BACK_MS
+        if self.shot_phase == 2 &&
+           now - self.phase_start >= BACK_MS
+
             self.shot_phase = 3
             self.phase_start = now
             self.motor_forward()
         end
 
-        if self.shot_phase == 3 && now - self.phase_start >= FORWARD2_MS
+        if self.shot_phase == 3 &&
+           now - self.phase_start >= FORWARD2_MS
+
             self.shot_phase = 0
             self.phase_start = 0
             self.motor_off()
@@ -241,7 +334,12 @@ class LaserGun
             self.trigger_lock = false
         end
 
-        if !gpio.digital_read(CONNECTED) && !gpio.digital_read(TRIGGER) && !self.trigger_lock && self.shot_phase == 0 && (self.infinite || self.charge >= STEP)
+        if !gpio.digital_read(CONNECTED) &&
+           !gpio.digital_read(TRIGGER) &&
+           !self.trigger_lock &&
+           self.shot_phase == 0 &&
+           (self.infinite || self.charge >= STEP)
+
             self.trigger_lock = true
             self.shoot()
         end

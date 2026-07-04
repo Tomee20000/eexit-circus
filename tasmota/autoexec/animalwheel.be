@@ -1,21 +1,8 @@
-# MQTT uzenetek:
-# Topic: CANIMALWHEEL/1
-# Payload: {"data":"MONKEY"}
-#
-# Ha az analog ertek egyik tartomanyba sem esik:
-# Topic: CANIMALWHEEL/1
-# Payload: {"data":"-"}
-#
-# Barmelyik kerek valtozasakor mind az 5 kerek
-# aktualis allapota elkuldesre kerul.
-#
-# Disabled modban is mukodik az MQTT.
-# Hang csak enabled modban, ervenyes allatpozicional szol.
-
 import json
 import mqtt
 
 var MQTT_TOPIC = "CANIMALWHEEL/"
+var STABLE_MS = 200
 
 var ANALOG_VALUE_MAP = {
     "low1": 270, "high1": 470,
@@ -89,6 +76,9 @@ class AnimalWheel
     var enabled
     var initialized
     var startup_published
+    var sound_playing
+    var sound_wheel
+    var sound_position
 
     def init()
         tasmota.cmd("I2SGain 70")
@@ -102,14 +92,59 @@ class AnimalWheel
         self.enabled = false
         self.initialized = false
         self.startup_published = false
+
+        self.sound_playing = false
+        self.sound_wheel = -1
+        self.sound_position = 0
+    end
+
+    def valid_animal_position(position)
+        return position >= 1 && position <= 5
     end
 
     def animal_name(wheel, position)
-        if position >= 1 && position <= 5
+        if self.valid_animal_position(position)
             return ANIMAL_MAP[wheel][position - 1]
         end
 
         return "-"
+    end
+
+    def stop_sound()
+        if self.sound_playing
+            tasmota.cmd("I2SStop")
+
+            self.sound_playing = false
+            self.sound_wheel = -1
+            self.sound_position = 0
+
+            print("Sound stopped")
+        end
+    end
+
+    def play_sound(wheel, position)
+        if !self.enabled
+            return
+        end
+
+        if !self.valid_animal_position(position)
+            return
+        end
+
+        var sound = SOUND_MAP[wheel][position - 1]
+
+        self.sound_playing = true
+        self.sound_wheel = wheel
+        self.sound_position = position
+
+        print("Wheel: " .. str(wheel + 1))
+        print(
+            "Animal: " ..
+            self.animal_name(wheel, position)
+        )
+        print("Playing: " .. sound)
+
+        tasmota.cmd("I2SPlay " .. sound)
     end
 
     def publish_wheel(wheel)
@@ -143,6 +178,7 @@ class AnimalWheel
 
     def disable()
         self.enabled = false
+        self.stop_sound()
         tasmota.resp_cmnd("AnimalWheel disabled")
     end
 
@@ -187,6 +223,25 @@ class AnimalWheel
         var new_position = self.get_position(analog_name)
         var now = tasmota.millis()
 
+        if self.sound_playing &&
+           self.sound_wheel == wheel &&
+           new_position != self.sound_position
+
+            self.stop_sound()
+        end
+
+        if !self.valid_animal_position(new_position)
+            self.pending_positions[wheel] = new_position
+            self.pending_since[wheel] = 0
+
+            if new_position != self.positions[wheel]
+                self.positions[wheel] = new_position
+                return true
+            end
+
+            return false
+        end
+
         if new_position != self.pending_positions[wheel]
             self.pending_positions[wheel] = new_position
             self.pending_since[wheel] = now
@@ -203,7 +258,7 @@ class AnimalWheel
             return false
         end
 
-        if now - self.pending_since[wheel] < 500
+        if now - self.pending_since[wheel] < STABLE_MS
             return false
         end
 
@@ -258,29 +313,11 @@ class AnimalWheel
 
         self.publish_all()
 
-        if !self.enabled
-            return
-        end
-
-        if latest_wheel >= 0 &&
-           latest_position >= 1 &&
-           latest_position <= 5
-
-            var sound = SOUND_MAP[
-                latest_wheel
-            ][latest_position - 1]
-
-            print("Wheel: " .. str(latest_wheel + 1))
-            print(
-                "Animal: " ..
-                self.animal_name(
-                    latest_wheel,
-                    latest_position
-                )
+        if latest_wheel >= 0
+            self.play_sound(
+                latest_wheel,
+                latest_position
             )
-            print("Playing: " .. sound)
-
-            tasmota.cmd("I2SPlay " .. sound)
         end
     end
 
@@ -316,9 +353,6 @@ tasmota.add_cmd(
 )
 
 print("AnimalWheel driver loaded")
-print("AnimalWheel default state: disabled")
-print("MQTT topics: CANIMALWHEEL/1 - CANIMALWHEEL/5")
-print("Unknown position payload: {\"data\":\"-\"}")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - enable AnimalWheel sound")

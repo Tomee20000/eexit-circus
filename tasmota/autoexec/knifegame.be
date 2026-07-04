@@ -37,7 +37,7 @@ var YELLOW_SOLUTION = [9,10,23]
 
 class KnifeGame
     var strip, color_map, color_state, rnd
-    var enable, stable_cnt, last_input, triggered
+    var enable, stable_cnt, last_input, triggered, sound_sent
 
     def init()
         self.strip = Leds(
@@ -68,6 +68,7 @@ class KnifeGame
         self.stable_cnt = 0
         self.last_input = 0
         self.triggered = 0
+        self.sound_sent = false
 
         self.strip.clear()
         self.strip.show()
@@ -88,6 +89,7 @@ class KnifeGame
         self.stable_cnt = 0
         self.last_input = 0
         self.triggered = 0
+        self.sound_sent = false
 
         tasmota.resp_cmnd("Game enabled")
     end
@@ -310,12 +312,21 @@ class KnifeGame
 
                 self.triggered = current
 
-                mqtt.publish(
-                    "cmnd/CANIMALWHEEL/i2splay",
-                    "mp3/wrong_ball.mp3"
-                )
+                if !self.sound_sent
+                    mqtt.publish(
+                        "cmnd/CANIMALWHEEL/i2splay",
+                        "mp3/knife.mp3"
+                    )
 
-                self.rotate(current)
+                    self.sound_sent = true
+                end
+
+                var rotate_current = current
+
+                tasmota.set_timer(
+                    50,
+                    / -> self.rotate(rotate_current)
+                )
             end
 
         elif self.stable_cnt == 30 &&
@@ -327,6 +338,7 @@ class KnifeGame
 
         if current == 0
             self.triggered = 0
+            self.sound_sent = false
         end
 
         if self.solution_check()

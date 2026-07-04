@@ -1,10 +1,10 @@
 #-
-#FFFFFF   (fehér)
-#0D00FF   (kék)
-#FF5F15   (sárga)
-#FF0000   (piros)
-#004D1A   (sötétzöld)
-#B10061   (lila / magenta)
+#FFFFFF   fehér
+#0D00FF   kék
+#FF5F15   sárga
+#FF0000   piros
+#004D1A   sötétzöld
+#B10061   lila / magenta
 -#
 
 import mqtt
@@ -16,6 +16,10 @@ var INPUT3 = 14
 var INPUT4 = 13
 var INPUT5 = 23
 var INPUT6 = 22
+
+var HAND_TOPIC = "CHANDGAME1"
+var ELEPHANT_TOPIC = "CELEPHANT"
+var GAME_TOPIC = "CHANDGAME"
 
 var COLOR_MAP = [
     "FF0000",
@@ -30,76 +34,78 @@ class Elephant
     var current_color
     var last_input
     var enable
-    var blink_current
-    var solving_started
-    var blink_round
-    var video_paused
-    var wanted_power
-    var wanted_color
+    var demo_round
+    var sensor_started
+    var last_demo_black
 
     def set_light(power, color)
-        self.wanted_power = power
-        self.wanted_color = color
-
-        if !self.video_paused
-            light.set({
-                "power": power,
-                "rgb": color
-            })
-            tasmota.cmd("State")
-        end
-    end
-
-    def pause_video()
-        self.video_paused = true
-
         light.set({
-            "power": false,
-            "rgb": self.wanted_color
+            "power": power,
+            "rgb": color
         })
 
         tasmota.cmd("State")
-        print("VIDEO4START received, light paused")
     end
 
-    def continue_video()
-        if !self.video_paused
-            return
+    def green_blink()
+        for i: 1..3
+            self.set_light(false, "008000")
+            tasmota.delay(250)
+
+            self.set_light(true, "008000")
+            tasmota.delay(250)
         end
 
-        self.video_paused = false
+        self.set_light(false, "008000")
+    end
 
-        light.set({
-            "power": self.wanted_power,
-            "rgb": self.wanted_color
-        })
+    def reset_after_wrong()
+        self.demo_round = 0
+        self.sensor_started = false
+        self.last_demo_black = false
+        self.last_input = nil
 
-        tasmota.cmd("State")
-        print("VIDEO4END received, light continued")
+        self.set_light(false, "FFFFFF")
     end
 
     def on_mqtt_message(topic, payload)
-        if topic == "CC/videocontrol"
-            var video_json = json.load(payload)
-            var video_data = video_json.find("data", nil)
+        if topic == HAND_TOPIC
+            if payload == "SOLVED_BLINK"
+                self.enable = false
+                self.sensor_started = false
+                self.green_blink()
+                return
+            end
 
-            if video_data == "VIDEO4START"
-                self.pause_video()
-            elif video_data == "VIDEO4END"
-                self.continue_video()
+            if !self.enable || self.sensor_started
+                return
+            end
+
+            if payload == "000000"
+                self.set_light(false, "FFFFFF")
+
+                if !self.last_demo_black
+                    self.demo_round += 1
+                    self.last_demo_black = true
+                end
+
+            else
+                self.set_light(true, payload)
+                self.last_demo_black = false
             end
 
             return
         end
 
-        if topic == "CHANDGAME1" && self.enable
-            if !self.solving_started && payload == "000000"
-                self.set_light(false, "FFFFFF")
-                self.blink_round += 1
+        if topic == GAME_TOPIC
+            var game_json = json.load(payload)
+            var game_data = game_json.find("data", nil)
 
-            elif !self.solving_started
-                self.set_light(true, payload)
+            if game_data == "WRONG"
+                self.reset_after_wrong()
             end
+
+            return
         end
     end
 
@@ -107,73 +113,63 @@ class Elephant
         self.current_color = 0
         self.last_input = nil
         self.enable = false
-        self.blink_current = 0
-        self.solving_started = false
-        self.blink_round = 0
-        self.video_paused = false
-        self.wanted_power = false
-        self.wanted_color = "FFFFFF"
+        self.demo_round = 0
+        self.sensor_started = false
+        self.last_demo_black = false
 
-        light.set({
-            "power": false,
-            "rgb": "FFFFFF"
-        })
-
-        tasmota.cmd("State")
+        self.set_light(false, "FFFFFF")
 
         mqtt.subscribe(
-            "CHANDGAME1",
+            HAND_TOPIC,
             /t, idx, data, b -> self.on_mqtt_message(t, data)
         )
 
         mqtt.subscribe(
-            "CC/videocontrol",
+            GAME_TOPIC,
             /t, idx, data, b -> self.on_mqtt_message(t, data)
         )
     end
 
     def enable_game()
         self.enable = true
-        self.blink_current = 0
-        self.solving_started = false
-        self.blink_round = 0
-        self.video_paused = false
-        self.wanted_power = false
-        self.wanted_color = "FFFFFF"
+        self.current_color = 0
+        self.last_input = nil
+        self.demo_round = 0
+        self.sensor_started = false
+        self.last_demo_black = false
 
-        light.set({
-            "power": false,
-            "rgb": "FFFFFF"
-        })
+        self.set_light(false, "FFFFFF")
 
-        tasmota.cmd("State")
         tasmota.resp_cmnd("Game enabled")
     end
 
     def disable_game()
         self.enable = false
-        self.video_paused = false
-        self.wanted_power = false
-        self.wanted_color = "FFFFFF"
+        self.current_color = 0
+        self.last_input = nil
+        self.demo_round = 0
+        self.sensor_started = false
+        self.last_demo_black = false
 
-        light.set({
-            "power": false,
-            "rgb": "FFFFFF"
-        })
+        self.set_light(false, "FFFFFF")
 
-        tasmota.cmd("State")
+        mqtt.publish(
+            ELEPHANT_TOPIC,
+            "000000"
+        )
+
         tasmota.resp_cmnd("Game disabled")
     end
 
-    def change_color()
+    def publish_color()
         var color = COLOR_MAP[self.current_color]
 
-        self.set_light(true, color)
-
         mqtt.publish(
-            tasmota.cmd("Topic")["Topic"],
+            ELEPHANT_TOPIC,
             color
         )
+
+        self.set_light(false, "FFFFFF")
     end
 
     def every_50ms()
@@ -196,11 +192,12 @@ class Elephant
 
         elif self.last_input != self.current_color &&
              self.enable &&
-             self.blink_round >= 1
+             self.demo_round >= 1
 
             self.last_input = self.current_color
-            self.change_color()
-            self.solving_started = true
+            self.sensor_started = true
+
+            self.publish_color()
         end
     end
 end
