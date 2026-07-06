@@ -89,7 +89,6 @@ class Handgame1
         self.next_color = 0
         self.demo_index = 0
         self.demo_active = true
-        self.first_correct = false
 
         self.set_light(false, "FFFFFF")
     end
