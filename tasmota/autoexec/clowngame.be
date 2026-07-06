@@ -3,6 +3,7 @@ import mqtt
 # ---------------- CONFIG ----------------
 
 var MQTT_TOPIC = "CCLOWNGAME"
+var EYE_STATE_TOPIC = "CCLOWNGAME/EYE/"
 
 var SOLUTION = [3, 5, 1, 4, 2]
 var BRIGHTNESS = 50
@@ -30,19 +31,12 @@ var EYE3 = 21
 var EYE4 = 19
 var EYE5 = 18
 
-# HA power channels for eyes
-var EYE_POWER1 = 0
-var EYE_POWER2 = 1
-var EYE_POWER3 = 2
-var EYE_POWER4 = 3
-var EYE_POWER5 = 4
-
 # ---------------- GAME ----------------
 
 class Clowngame
     var enable, step, state, blink_id, active_clown
-    var buttons, noses, eyes, eye_powers
-    var last_buttons, last_noses
+    var buttons, noses, eyes
+    var last_buttons, last_noses, last_eye_states
     var solving_started
 
     def init()
@@ -56,22 +50,36 @@ class Clowngame
         self.buttons = [BUTTON1, BUTTON2, BUTTON3, BUTTON4, BUTTON5]
         self.noses = [NOSE1, NOSE2, NOSE3, NOSE4, NOSE5]
         self.eyes = [EYE1, EYE2, EYE3, EYE4, EYE5]
-        self.eye_powers = [EYE_POWER1, EYE_POWER2, EYE_POWER3, EYE_POWER4, EYE_POWER5]
 
         self.last_buttons = [false, false, false, false, false]
         self.last_noses = [false, false, false, false, false]
+        self.last_eye_states = ["", "", "", "", ""]
 
         self.all_off()
     end
 
+    def publish_eye_state(i, state)
+        if self.last_eye_states[i] == state
+            return
+        end
+
+        self.last_eye_states[i] = state
+
+        mqtt.publish(
+            EYE_STATE_TOPIC .. str(i + 1),
+            state,
+            true
+        )
+    end
+
     def eye_on(i)
-        tasmota.set_power(self.eye_powers[i], true)
         gpio.set_pwm(self.eyes[i], BRIGHTNESS)
+        self.publish_eye_state(i, "ON")
     end
 
     def eye_off(i)
-        tasmota.set_power(self.eye_powers[i], false)
         gpio.set_pwm(self.eyes[i], 0)
+        self.publish_eye_state(i, "OFF")
     end
 
     def every_50ms()

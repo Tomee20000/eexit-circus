@@ -21,6 +21,15 @@ var HAND_TOPIC = "CHANDGAME1"
 var ELEPHANT_TOPIC = "CELEPHANT"
 var GAME_TOPIC = "CHANDGAME"
 
+var SOLUTION_SEQUENCE = [
+    "FFFFFF",
+    "0D00FF",
+    "FF5F15",
+    "FF0000",
+    "004D1A",
+    "B10061"
+]
+
 var COLOR_MAP = [
     "FF0000",
     "FFFFFF",
@@ -34,9 +43,9 @@ class Elephant
     var current_color
     var last_input
     var enable
+    var demo_index
     var demo_round
-    var sensor_started
-    var last_demo_black
+    var solved
 
     def set_light(power, color)
         light.set({
@@ -47,51 +56,13 @@ class Elephant
         tasmota.cmd("State")
     end
 
-    def green_blink()
-        for i: 1..3
-            self.set_light(false, "008000")
-            tasmota.delay(250)
-
-            self.set_light(true, "008000")
-            tasmota.delay(250)
-        end
-
-        self.set_light(false, "008000")
-    end
-
-    def reset_after_wrong()
-        self.demo_round = 0
-        self.sensor_started = false
-        self.last_demo_black = false
-        self.last_input = nil
-
-        self.set_light(false, "FFFFFF")
-    end
-
     def on_mqtt_message(topic, payload)
         if topic == HAND_TOPIC
             if payload == "SOLVED_BLINK"
+                self.solved = true
                 self.enable = false
-                self.sensor_started = false
-                self.green_blink()
-                return
-            end
-
-            if !self.enable || self.sensor_started
-                return
-            end
-
-            if payload == "000000"
                 self.set_light(false, "FFFFFF")
-
-                if !self.last_demo_black
-                    self.demo_round += 1
-                    self.last_demo_black = true
-                end
-
-            else
-                self.set_light(true, payload)
-                self.last_demo_black = false
+                return
             end
 
             return
@@ -101,8 +72,16 @@ class Elephant
             var game_json = json.load(payload)
             var game_data = game_json.find("data", nil)
 
+            if game_data == "SOLVED"
+                self.solved = true
+                self.enable = false
+                self.set_light(false, "FFFFFF")
+            end
+
             if game_data == "WRONG"
-                self.reset_after_wrong()
+                self.demo_index = 0
+                self.demo_round = 0
+                self.last_input = nil
             end
 
             return
@@ -113,9 +92,9 @@ class Elephant
         self.current_color = 0
         self.last_input = nil
         self.enable = false
+        self.demo_index = 0
         self.demo_round = 0
-        self.sensor_started = false
-        self.last_demo_black = false
+        self.solved = false
 
         self.set_light(false, "FFFFFF")
 
@@ -134,9 +113,9 @@ class Elephant
         self.enable = true
         self.current_color = 0
         self.last_input = nil
+        self.demo_index = 0
         self.demo_round = 0
-        self.sensor_started = false
-        self.last_demo_black = false
+        self.solved = false
 
         self.set_light(false, "FFFFFF")
 
@@ -147,9 +126,9 @@ class Elephant
         self.enable = false
         self.current_color = 0
         self.last_input = nil
+        self.demo_index = 0
         self.demo_round = 0
-        self.sensor_started = false
-        self.last_demo_black = false
+        self.solved = false
 
         self.set_light(false, "FFFFFF")
 
@@ -168,11 +147,30 @@ class Elephant
             ELEPHANT_TOPIC,
             color
         )
+    end
 
-        self.set_light(false, "FFFFFF")
+    def every_second()
+        if !self.enable || self.solved
+            return
+        end
+
+        var color = SOLUTION_SEQUENCE[self.demo_index]
+
+        self.set_light(true, color)
+
+        self.demo_index += 1
+
+        if self.demo_index >= size(SOLUTION_SEQUENCE)
+            self.demo_index = 0
+            self.demo_round += 1
+        end
     end
 
     def every_50ms()
+        if !self.enable || self.solved
+            return
+        end
+
         if gpio.digital_read(INPUT1)
             self.current_color = 0
         elif gpio.digital_read(INPUT2)
@@ -191,12 +189,9 @@ class Elephant
             self.last_input = self.current_color
 
         elif self.last_input != self.current_color &&
-             self.enable &&
              self.demo_round >= 1
 
             self.last_input = self.current_color
-            self.sensor_started = true
-
             self.publish_color()
         end
     end
