@@ -96,14 +96,8 @@ class BallGame
            !self.timeout_sent &&
            tasmota.millis() - self.last_read_time >= NO_CARD_TIMEOUT
 
-            self.card_present = false
-            self.timeout_sent = true
-
-            if self.current_ball != "-"
-                self.current_ball = "-"
-                mqtt.publish(self.topic .. "/BALL", "-")
-                print("NFC removed")
-            end
+            self.clear_ball()
+            print("NFC removed")
         end
     end
 
@@ -350,10 +344,6 @@ class BallGame
         if state != self.switch_state
             self.switch_state = state
             self.publish_switch(state)
-
-            if state == 0
-                self.clear_ball()
-            end
         end
 
         self.handle_pn532()

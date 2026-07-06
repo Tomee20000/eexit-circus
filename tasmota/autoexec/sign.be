@@ -22,25 +22,35 @@ var LED5 = 4 #U 27
 var LED6 = 5 #S 14
 var LED_GREENRED = 6
 
-var START_LED1 = false
-var START_LED2 = true
-var START_LED3 = false
-var START_LED4 = false
-var START_LED5 = false
-var START_LED6 = false
-var START_GREENRED = false
+var INTRO_MS = 60000
+var SENSOR_HOLD_MS = 250
+var INPUT_COOLDOWN_MS = 350
+var GLITCH_STEP_MS = 120
 
 class Sign
     var enabled, solved, animating
-    var anim_pos, anim_leds
+    var phase, anim_id, glitch_pos
+    var glitch_masks
+    var input_pending, input_token, input_last
     var mqtt_topic
 
     def init()
         self.enabled = false
         self.solved = false
         self.animating = false
-        self.anim_pos = 0
-        self.anim_leds = [LED1, LED2, LED3, LED4, LED5, LED6, LED5, LED4, LED3, LED2]
+        self.phase = 0
+        self.anim_id = 0
+        self.glitch_pos = 0
+
+        self.glitch_masks = [
+            63, 0, 63, 2, 63, 18, 50, 0,
+            32, 63, 40, 0, 48, 32, 34, 0,
+            63, 8, 0, 32
+        ]
+
+        self.input_pending = [false, false, false, false, false, false, false]
+        self.input_token = [0, 0, 0, 0, 0, 0, 0]
+        self.input_last = [0, 0, 0, 0, 0, 0, 0]
 
         self.mqtt_topic = "CSIGN"
 
@@ -53,16 +63,30 @@ class Sign
         end
     end
 
-    def start_state()
-        self.all_off()
+    def letters_off()
+        for led:0..5
+            tasmota.set_power(led, false)
+        end
+    end
 
-        tasmota.set_power(LED1, START_LED1)
-        tasmota.set_power(LED2, START_LED2)
-        tasmota.set_power(LED3, START_LED3)
-        tasmota.set_power(LED4, START_LED4)
-        tasmota.set_power(LED5, START_LED5)
-        tasmota.set_power(LED6, START_LED6)
-        tasmota.set_power(LED_GREENRED, START_GREENRED)
+    def letters_on()
+        for led:0..5
+            tasmota.set_power(led, true)
+        end
+    end
+
+    def play_state()
+        self.letters_off()
+        tasmota.set_power(LED6, true)
+    end
+
+    def set_letters_mask(mask)
+        var i = 0
+
+        while i < 6
+            tasmota.set_power(i, (mask & (1 << i)) != 0)
+            i = i + 1
+        end
     end
 
     def toggle_led(led)
@@ -70,41 +94,98 @@ class Sign
         tasmota.set_power(led, !p[led])
     end
 
+    def clear_input_state()
+        var i = 1
+
+        while i <= 6
+            self.input_pending[i] = false
+            self.input_token[i] = self.input_token[i] + 1
+            self.input_last[i] = 0
+            i = i + 1
+        end
+    end
+
     def cmd_enable(cmd, idx, payload, payload_json)
+        self.anim_id = self.anim_id + 1
+        var id = self.anim_id
+
         self.enabled = true
         self.solved = false
         self.animating = true
-        self.anim_pos = 0
-        self.all_off()
-        self.anim_step()
+        self.phase = 1
+        self.glitch_pos = 0
+
+        self.clear_input_state()
+        tasmota.remove_timer("sign_intro")
+        tasmota.remove_timer("sign_glitch")
+
+        self.letters_on()
+        tasmota.set_power(LED_GREENRED, false)
+
+        tasmota.set_timer(INTRO_MS, / -> self.start_glitch(id), "sign_intro")
+
         tasmota.resp_cmnd_done()
     end
 
     def cmd_disable(cmd, idx, payload, payload_json)
+        self.anim_id = self.anim_id + 1
+
         self.enabled = false
         self.solved = false
         self.animating = false
+        self.phase = 0
+
+        self.clear_input_state()
         self.all_off()
-        tasmota.remove_timer("sign_anim")
+
+        tasmota.remove_timer("sign_intro")
+        tasmota.remove_timer("sign_glitch")
+
         tasmota.resp_cmnd_done()
     end
 
-    def anim_step()
-        if !self.enabled || !self.animating
+    def start_glitch(id)
+        if id != self.anim_id || !self.enabled || self.solved || self.phase != 1
             return nil
         end
 
-        self.all_off()
+        self.phase = 2
+        self.glitch_pos = 0
+        self.clear_input_state()
 
-        tasmota.set_power(self.anim_leds[self.anim_pos], true)
+        tasmota.remove_timer("sign_intro")
+        self.glitch_step(id)
+    end
 
-        self.anim_pos += 1
-        if self.anim_pos >= size(self.anim_leds)
-            self.anim_pos = 0
+    def glitch_step(id)
+        if id != self.anim_id || !self.enabled || self.solved || self.phase != 2
+            return nil
         end
 
-        tasmota.set_timer(500, / -> self.anim_step(), "sign_anim")
+        if self.glitch_pos >= size(self.glitch_masks)
+            self.finish_glitch(id)
+            return nil
+        end
+
+        self.set_letters_mask(self.glitch_masks[self.glitch_pos])
+
+        self.glitch_pos = self.glitch_pos + 1
+
+        tasmota.set_timer(GLITCH_STEP_MS, / -> self.glitch_step(id), "sign_glitch")
     end
+
+    def finish_glitch(id)
+        if id != self.anim_id || !self.enabled || self.solved
+            return nil
+        end
+
+        self.phase = 3
+        self.animating = false
+        self.clear_input_state()
+        self.play_state()
+
+        mqtt.publish(self.mqtt_topic, '{"data":"LAMPOFF"}')
+    end 
 
     def check_solved()
         if self.solved
@@ -117,29 +198,19 @@ class Sign
             self.solved = true
             self.enabled = false
             self.animating = false
-            tasmota.remove_timer("sign_anim")
+            self.phase = 0
+
+            self.clear_input_state()
+            tasmota.remove_timer("sign_intro")
+            tasmota.remove_timer("sign_glitch")
+
             mqtt.publish(self.mqtt_topic, '{"data":"SOLVED"}')
         end
     end
 
-    def any_key(cmd, idx)
-        var id = number(idx & 0xff)
-
-        if id == 7
-            if self.solved
-                self.toggle_led(LED_GREENRED)
-            end
+    def apply_input(id)
+        if !self.enabled || self.solved || self.phase != 3
             return nil
-        end
-
-        if !self.enabled || self.solved
-            return nil
-        end
-
-        if self.animating
-            self.animating = false
-            tasmota.remove_timer("sign_anim")
-            self.start_state()
         end
 
         if id == 1
@@ -159,7 +230,71 @@ class Sign
             self.toggle_led(LED6)
         end
 
+        self.input_last[id] = tasmota.millis()
         self.check_solved()
+    end
+
+    def finalize_input(id, token)
+        if !self.enabled || self.solved || self.phase != 3
+            return nil
+        end
+
+        if self.input_pending[id] && self.input_token[id] == token
+            self.input_pending[id] = false
+            self.apply_input(id)
+        end
+    end
+
+    def handle_input_edge(id)
+        if id < 1 || id > 6
+            return nil
+        end
+
+        if !self.enabled || self.solved
+            return nil
+        end
+
+        if self.phase == 1
+            self.start_glitch(self.anim_id)
+            return nil
+        end
+
+        if self.phase != 3
+            return nil
+        end
+
+        var now = tasmota.millis()
+
+        if self.input_last[id] != 0 && now - self.input_last[id] < INPUT_COOLDOWN_MS
+            return nil
+        end
+
+        if self.input_pending[id]
+            self.input_pending[id] = false
+            self.input_token[id] = self.input_token[id] + 1
+            self.apply_input(id)
+            return nil
+        end
+
+        self.input_pending[id] = true
+        self.input_token[id] = self.input_token[id] + 1
+
+        var token = self.input_token[id]
+
+        tasmota.set_timer(SENSOR_HOLD_MS, / -> self.finalize_input(id, token))
+    end
+
+    def any_key(cmd, idx)
+        var id = number(idx & 0xff)
+
+        if id == 7
+            if self.solved
+                self.toggle_led(LED_GREENRED)
+            end
+            return nil
+        end
+
+        self.handle_input_edge(id)
     end
 end
 
