@@ -154,13 +154,19 @@ class Elephant
             return
         end
 
-        var color = SOLUTION_SEQUENCE[self.demo_index]
+        if self.demo_index < 6
+            var color = SOLUTION_SEQUENCE[self.demo_index]
 
-        self.set_light(true, color)
+            self.set_light(true, color)
 
-        self.demo_index += 1
+            self.demo_index += 1
 
-        if self.demo_index >= size(SOLUTION_SEQUENCE)
+        elif self.demo_index <= 7
+            self.set_light(false, "FFFFFF")
+
+            self.demo_index += 1
+
+        else
             self.demo_index = 0
             self.demo_round += 1
         end
