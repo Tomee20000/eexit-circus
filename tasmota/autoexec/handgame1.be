@@ -35,10 +35,11 @@ var SOLUTION = [
 
 class Handgame1
     var enable
-    var elephant_color
+    var selected_color
     var next_color
     var demo_index
     var demo_active
+    var selector_started
     var first_correct
 
     def set_light(power, color)
@@ -48,6 +49,18 @@ class Handgame1
         })
 
         tasmota.cmd("State")
+    end
+
+    def green_blink()
+        for i: 1..3
+            self.set_light(false, "008000")
+            tasmota.delay(250)
+
+            self.set_light(true, "008000")
+            tasmota.delay(250)
+        end
+
+        self.set_light(false, "008000")
     end
 
     def blink_color(color)
@@ -60,18 +73,17 @@ class Handgame1
         end
     end
 
-    def solved_blink()
-        mqtt.publish(HAND_TOPIC, "SOLVED_BLINK")
+    def solved()
+        self.enable = false
+        self.demo_active = false
+        self.selector_started = false
 
-        for i: 1..3
-            self.set_light(false, "008000")
-            tasmota.delay(250)
+        mqtt.publish(
+            HAND_TOPIC,
+            "SOLVED_BLINK"
+        )
 
-            self.set_light(true, "008000")
-            tasmota.delay(250)
-        end
-
-        self.set_light(false, "008000")
+        self.green_blink()
 
         mqtt.publish(
             GAME_TOPIC,
@@ -85,10 +97,12 @@ class Handgame1
             '{"data":"WRONG"}'
         )
 
-        self.elephant_color = nil
+        self.selected_color = nil
         self.next_color = 0
         self.demo_index = 0
         self.demo_active = true
+        self.selector_started = false
+        self.first_correct = false
 
         self.set_light(false, "FFFFFF")
     end
@@ -99,20 +113,29 @@ class Handgame1
                 return
             end
 
-            self.elephant_color = payload
-            self.demo_active = false
-
             if payload == "000000"
                 self.set_light(false, "FFFFFF")
-            else
-                self.set_light(true, payload)
+                return
             end
 
+            self.selected_color = payload
+            self.selector_started = true
+            self.demo_active = false
+
+            self.set_light(true, self.selected_color)
             return
         end
 
         if topic == HAND_SENSOR_TOPIC
             if !self.enable
+                return
+            end
+
+            if !self.selector_started
+                return
+            end
+
+            if self.selected_color == nil
                 return
             end
 
@@ -122,15 +145,11 @@ class Handgame1
                 return
             end
 
-            if self.elephant_color == nil
+            if self.next_color >= size(SOLUTION)
                 return
             end
 
-            if self.next_color >= 6
-                return
-            end
-
-            if self.elephant_color == SOLUTION[self.next_color]
+            if self.selected_color == SOLUTION[self.next_color]
                 if !self.first_correct
                     self.first_correct = true
 
@@ -142,21 +161,16 @@ class Handgame1
 
                 self.next_color += 1
 
-                if self.next_color == 6
-                    print("Game solved")
-
-                    self.enable = false
-                    self.demo_active = false
-
+                if self.next_color >= size(SOLUTION)
                     tasmota.set_timer(
                         1000,
-                        / -> self.solved_blink()
+                        / -> self.solved()
                     )
 
                     return
                 end
 
-                self.blink_color(self.elephant_color)
+                self.blink_color(self.selected_color)
 
             else
                 self.wrong()
@@ -166,10 +180,11 @@ class Handgame1
 
     def init()
         self.enable = false
-        self.elephant_color = nil
+        self.selected_color = nil
         self.next_color = 0
         self.demo_index = 0
         self.demo_active = false
+        self.selector_started = false
         self.first_correct = false
 
         self.set_light(false, "FFFFFF")
@@ -187,10 +202,11 @@ class Handgame1
 
     def enable_game()
         self.enable = true
-        self.elephant_color = nil
+        self.selected_color = nil
         self.next_color = 0
         self.demo_index = 0
         self.demo_active = true
+        self.selector_started = false
         self.first_correct = false
 
         self.set_light(false, "FFFFFF")
@@ -200,15 +216,14 @@ class Handgame1
 
     def disable_game()
         self.enable = false
-        self.elephant_color = nil
+        self.selected_color = nil
         self.next_color = 0
         self.demo_index = 0
         self.demo_active = false
+        self.selector_started = false
         self.first_correct = false
 
         self.set_light(false, "FFFFFF")
-
-        mqtt.publish(HAND_TOPIC, "000000")
 
         tasmota.resp_cmnd("Game disabled")
     end
@@ -219,24 +234,15 @@ class Handgame1
         end
 
         if self.demo_index < 6
-            var current_color = SOLUTION[self.demo_index]
-
-            self.set_light(true, current_color)
-
-            mqtt.publish(
-                HAND_TOPIC,
-                current_color
+            self.set_light(
+                true,
+                SOLUTION[self.demo_index]
             )
 
             self.demo_index += 1
 
         elif self.demo_index <= 7
             self.set_light(false, "FFFFFF")
-
-            mqtt.publish(
-                HAND_TOPIC,
-                "000000"
-            )
 
             self.demo_index += 1
 

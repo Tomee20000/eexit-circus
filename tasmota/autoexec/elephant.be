@@ -56,12 +56,28 @@ class Elephant
         tasmota.cmd("State")
     end
 
+    def green_blink()
+        for i: 1..3
+            self.set_light(false, "008000")
+            tasmota.delay(250)
+
+            self.set_light(true, "008000")
+            tasmota.delay(250)
+        end
+
+        self.set_light(false, "008000")
+    end
+
     def on_mqtt_message(topic, payload)
         if topic == HAND_TOPIC
             if payload == "SOLVED_BLINK"
+                if self.solved
+                    return
+                end
+
                 self.solved = true
                 self.enable = false
-                self.set_light(false, "FFFFFF")
+                self.green_blink()
                 return
             end
 
@@ -72,16 +88,20 @@ class Elephant
             var game_json = json.load(payload)
             var game_data = game_json.find("data", nil)
 
-            if game_data == "SOLVED"
-                self.solved = true
-                self.enable = false
-                self.set_light(false, "FFFFFF")
-            end
-
             if game_data == "WRONG"
                 self.demo_index = 0
                 self.demo_round = 0
                 self.last_input = nil
+            end
+
+            if game_data == "SOLVED"
+                if self.solved
+                    return
+                end
+
+                self.solved = true
+                self.enable = false
+                self.set_light(false, "FFFFFF")
             end
 
             return
@@ -155,9 +175,10 @@ class Elephant
         end
 
         if self.demo_index < 6
-            var color = SOLUTION_SEQUENCE[self.demo_index]
-
-            self.set_light(true, color)
+            self.set_light(
+                true,
+                SOLUTION_SEQUENCE[self.demo_index]
+            )
 
             self.demo_index += 1
 
