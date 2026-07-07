@@ -338,7 +338,6 @@ class KnifeGame
 
         if current == 0
             self.triggered = 0
-            self.sound_sent = false
         end
 
         if self.solution_check()
