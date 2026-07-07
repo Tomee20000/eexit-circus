@@ -97,14 +97,16 @@ class Handgame1
             '{"data":"WRONG"}'
         )
 
-        self.selected_color = nil
         self.next_color = 0
-        self.demo_index = 0
-        self.demo_active = true
-        self.selector_started = false
         self.first_correct = false
+        self.demo_active = false
+        self.selector_started = true
 
-        self.set_light(false, "FFFFFF")
+        if self.selected_color != nil
+            self.set_light(true, self.selected_color)
+        else
+            self.set_light(false, "FFFFFF")
+        end
     end
 
     def on_mqtt_message(topic, payload)
@@ -113,16 +115,18 @@ class Handgame1
                 return
             end
 
+            self.selector_started = true
+            self.demo_active = false
+
             if payload == "000000"
+                self.selected_color = nil
                 self.set_light(false, "FFFFFF")
                 return
             end
 
             self.selected_color = payload
-            self.selector_started = true
-            self.demo_active = false
-
             self.set_light(true, self.selected_color)
+
             return
         end
 
