@@ -1,350 +1,280 @@
+#-
+#FFFFFF   fehér
+#0D00FF   kék
+#FF5F15   sárga
+#FF0000   piros
+#004D1A   sötétzöld
+#B10061   lila / magenta
+#000000   fekete / szünet
+-#
+
 import mqtt
+import json
 
-var IN1 = 26
-var IN2 = 27
-var IN3 = 14
-var IN4 = 12
-var IN5 = 13
-var IN6 = 23
+var HAND_TOPIC = "CHANDGAME1"
+var ELEPHANT_TOPIC = "CELEPHANT"
+var GAME_TOPIC = "CHANDGAME"
+var VIDEO_TOPIC = "CC/videocontrol"
+var HAND_SENSOR_TOPIC = "tele/CHANDGAME2/SENSOR"
 
-var OUT2 = 22
-var OUT3 = 21
-var OUT6 = 19
+var UID_MAP = {
+    "F42A6E05": 1,
+    "B357B303": 2,
+    "3FF4F829": 3,
+    "0D807606": 4
+}
 
-var DRAWER = 1
-var BEEPER = 0
-var SCREEN = 7
+var SOLUTION = [
+    "FFFFFF",
+    "0D00FF",
+    "FF5F15",
+    "FF0000",
+    "004D1A",
+    "B10061"
+]
 
-var CORRECT_CODE = "5317813775"
+class Handgame1
+    var enable
+    var selected_color
+    var next_color
+    var demo_index
+    var demo_active
+    var selector_started
+    var first_correct
 
-class CashRegister
-    var code, solved, enabled
-    var held_key
-    var beep_active, beep_deadline
-    var wrong_beeps_left, next_wrong_beep
-    var clear_wrong_deadline, clear_wrong_active
-    var fast_loop_closure
+    def set_light(power, color)
+        light.set({
+            "power": power,
+            "rgb": color
+        })
 
-    def init()
-        self.enabled = true
-        self.fast_loop_closure = / -> self.fast_loop()
-
-        self.code = ""
-        self.solved = false
-        self.held_key = nil
-
-        self.beep_active = false
-        self.beep_deadline = 0
-
-        self.wrong_beeps_left = 0
-        self.next_wrong_beep = 0
-
-        self.clear_wrong_deadline = 0
-        self.clear_wrong_active = false
-
-        self.reset()
-
-        tasmota.add_fast_loop(self.fast_loop_closure)
+        tasmota.cmd("State")
     end
 
-    def all_rows_off()
-        gpio.digital_write(OUT2, gpio.LOW)
-        gpio.digital_write(OUT3, gpio.LOW)
-        gpio.digital_write(OUT6, gpio.LOW)
-    end
+    def green_blink()
+        for i: 1..3
+            self.set_light(false, "008000")
+            tasmota.delay(250)
 
-    def stop_beeper()
-        self.beep_active = false
-        self.beep_deadline = 0
-        tasmota.set_power(BEEPER, false)
-    end
-
-    def beep()
-        if !self.enabled
-            return
+            self.set_light(true, "008000")
+            tasmota.delay(250)
         end
 
-        self.beep_deadline = tasmota.millis(90)
+        self.set_light(false, "008000")
+    end
 
-        if !self.beep_active
-            self.beep_active = true
-            tasmota.set_power(BEEPER, true)
+    def blink_color(color)
+        for i: 1..3
+            self.set_light(false, color)
+            tasmota.delay(250)
+
+            self.set_light(true, color)
+            tasmota.delay(250)
         end
     end
 
-    def service_beeper()
-        if self.beep_active && tasmota.time_reached(self.beep_deadline)
-            self.beep_active = false
-            tasmota.set_power(BEEPER, false)
-        end
+    def solved()
+        self.enable = false
+        self.demo_active = false
+        self.selector_started = false
 
-        if self.wrong_beeps_left > 0
-            if tasmota.time_reached(self.next_wrong_beep)
-                self.beep()
-                self.wrong_beeps_left -= 1
-
-                if self.wrong_beeps_left > 0
-                    self.next_wrong_beep = tasmota.millis(500)
-                end
-            end
-        end
-    end
-
-    def service_display_timer()
-        if self.clear_wrong_active
-            if tasmota.time_reached(self.clear_wrong_deadline)
-                self.clear_wrong_active = false
-
-                if self.enabled && !self.solved
-                    self.code = ""
-                    tasmota.cmd("DisplayText[zr]")
-                end
-            end
-        end
-    end
-
-    def reset()
-        self.code = ""
-        self.solved = false
-        self.held_key = nil
-
-        self.wrong_beeps_left = 0
-        self.clear_wrong_active = false
-
-        self.stop_beeper()
-        self.all_rows_off()
-
-        tasmota.set_power(DRAWER, true)
-
-        if self.enabled
-            tasmota.set_power(SCREEN, true)
-            tasmota.cmd("DisplayText[zr]")
-        else
-            tasmota.set_power(SCREEN, false)
-        end
-    end
-
-    def show_code()
-        if !self.enabled
-            return
-        end
-
-        tasmota.cmd("DisplayText[zr]")
-        tasmota.cmd("DisplayText " + self.code)
-    end
-
-    def wrong_code()
         mqtt.publish(
-            "CASHREGISTER",
+            HAND_TOPIC,
+            "SOLVED_BLINK"
+        )
+
+        self.green_blink()
+
+        mqtt.publish(
+            GAME_TOPIC,
+            '{"data":"SOLVED"}'
+        )
+    end
+
+    def wrong()
+        mqtt.publish(
+            GAME_TOPIC,
             '{"data":"WRONG"}'
         )
 
-        self.code = ""
+        self.next_color = 0
+        self.first_correct = false
+        self.demo_active = false
+        self.selector_started = true
 
-        tasmota.cmd("DisplayText[zr]")
-        tasmota.cmd("DisplayText WRONG CODE")
-
-        self.wrong_beeps_left = 3
-        self.next_wrong_beep = tasmota.millis(100)
-
-        self.clear_wrong_active = true
-        self.clear_wrong_deadline = tasmota.millis(2000)
-    end
-
-    def correct_code()
-        mqtt.publish(
-            "CASHREGISTER",
-            '{"data":"SOLVED"}'
-        )
-
-        self.wrong_beeps_left = 0
-        self.clear_wrong_active = false
-
-        self.beep()
-        self.solved = true
-        self.code = ""
-
-        self.all_rows_off()
-
-        tasmota.cmd("DisplayText[zr]")
-        tasmota.cmd("DisplayText CORRECT CODE")
-        tasmota.set_power(DRAWER, false)
-    end
-
-    def button_push(key)
-        if !self.enabled || self.solved
-            return
+        if self.selected_color != nil
+            self.set_light(true, self.selected_color)
+        else
+            self.set_light(false, "FFFFFF")
         end
+    end
 
-        if key == "ENTER"
-            if self.code == CORRECT_CODE
-                self.correct_code()
-            else
-                self.wrong_code()
+    def on_mqtt_message(topic, payload)
+        if topic == ELEPHANT_TOPIC
+            if !self.enable
+                return
             end
 
+            self.selector_started = true
+            self.demo_active = false
+
+            if payload == "000000"
+                self.selected_color = nil
+                self.set_light(false, "FFFFFF")
+                return
+            end
+
+            self.selected_color = payload
+            self.set_light(true, self.selected_color)
+
             return
         end
 
-        if size(self.code) < size(CORRECT_CODE)
-            self.beep()
-            self.code += key
-            self.show_code()
-            mqtt.publish("CASHREGISTER/KEYBOARD", self.code)
+        if topic == HAND_SENSOR_TOPIC
+            if !self.enable
+                return
+            end
+
+            if !self.selector_started
+                return
+            end
+
+            if self.selected_color == nil
+                return
+            end
+
+            var sensor_data = json.load(payload)
+
+            if sensor_data.find("Switch1", nil) == nil
+                return
+            end
+
+            if self.next_color >= size(SOLUTION)
+                return
+            end
+
+            if self.selected_color == SOLUTION[self.next_color]
+                if !self.first_correct
+                    self.first_correct = true
+
+                    mqtt.publish(
+                        VIDEO_TOPIC,
+                        '{"data":"VIDEO4START"}'
+                    )
+                end
+
+                self.next_color += 1
+
+                if self.next_color >= size(SOLUTION)
+                    tasmota.set_timer(
+                        1000,
+                        / -> self.solved()
+                    )
+
+                    return
+                end
+
+                self.blink_color(self.selected_color)
+
+            else
+                self.wrong()
+            end
         end
     end
 
-    def read_row_1()
-        self.all_rows_off()
-        gpio.digital_write(OUT2, gpio.HIGH)
-        tasmota.delay(1)
+    def init()
+        self.enable = false
+        self.selected_color = nil
+        self.next_color = 0
+        self.demo_index = 0
+        self.demo_active = false
+        self.selector_started = false
+        self.first_correct = false
 
-        if gpio.digital_read(IN1)
-            return "5"
-        elif gpio.digital_read(IN2)
-            return "4"
-        elif gpio.digital_read(IN3)
-            return "3"
-        elif gpio.digital_read(IN4)
-            return "2"
-        elif gpio.digital_read(IN5)
-            return "1"
-        elif gpio.digital_read(IN6)
-            return "0"
-        end
+        self.set_light(false, "FFFFFF")
 
-        return nil
-    end
+        mqtt.subscribe(
+            HAND_SENSOR_TOPIC,
+            /t, idx, data, b -> self.on_mqtt_message(t, data)
+        )
 
-    def read_row_2()
-        self.all_rows_off()
-        gpio.digital_write(OUT3, gpio.HIGH)
-        tasmota.delay(1)
-
-        #- IN2 = "00" -#
-
-        if gpio.digital_read(IN3)
-            return "8"
-        elif gpio.digital_read(IN4)
-            return "9"
-        elif gpio.digital_read(IN5)
-            return "7"
-        elif gpio.digital_read(IN6)
-            return "6"
-        end
-
-        return nil
-    end
-
-    def read_row_3()
-        self.all_rows_off()
-        gpio.digital_write(OUT6, gpio.HIGH)
-        tasmota.delay(1)
-
-        #- IN1 = "+" -#
-
-        if gpio.digital_read(IN5)
-            return "ENTER"
-        end
-
-        return nil
-    end
-
-    def read_keyboard()
-        var key = self.read_row_1()
-
-        if key == nil
-            key = self.read_row_2()
-        end
-
-        if key == nil
-            key = self.read_row_3()
-        end
-
-        self.all_rows_off()
-        return key
-    end
-
-    def fast_loop()
-        self.service_beeper()
-        self.service_display_timer()
-
-        if !self.enabled || self.solved
-            self.all_rows_off()
-            return
-        end
-
-        var key = self.read_keyboard()
-
-        if key == nil
-            self.held_key = nil
-            return
-        end
-
-        if self.held_key == nil
-            self.held_key = key
-            self.button_push(key)
-        elif self.held_key != key
-            self.held_key = key
-            self.button_push(key)
-        end
+        mqtt.subscribe(
+            ELEPHANT_TOPIC,
+            /t, idx, data, b -> self.on_mqtt_message(t, data)
+        )
     end
 
     def enable_game()
-        self.enabled = true
-        self.held_key = nil
+        self.enable = true
+        self.selected_color = nil
+        self.next_color = 0
+        self.demo_index = 0
+        self.demo_active = true
+        self.selector_started = false
+        self.first_correct = false
 
-        tasmota.set_power(SCREEN, true)
+        self.set_light(false, "FFFFFF")
 
-        if self.solved
-            tasmota.cmd("DisplayText[zr]")
-            tasmota.cmd("DisplayText CORRECT CODE")
-        else
-            self.show_code()
-        end
-
-        tasmota.resp_cmnd("Cash register enabled")
+        tasmota.resp_cmnd("Game enabled")
     end
 
     def disable_game()
-        self.enabled = false
-        self.held_key = nil
+        self.enable = false
+        self.selected_color = nil
+        self.next_color = 0
+        self.demo_index = 0
+        self.demo_active = false
+        self.selector_started = false
+        self.first_correct = false
 
-        self.wrong_beeps_left = 0
-        self.clear_wrong_active = false
+        self.set_light(false, "FFFFFF")
 
-        self.stop_beeper()
-        self.all_rows_off()
+        tasmota.resp_cmnd("Game disabled")
+    end
 
-        tasmota.set_power(SCREEN, false)
-        tasmota.resp_cmnd("Cash register disabled")
+    def every_second()
+        if !self.enable || !self.demo_active
+            return
+        end
+
+        if self.demo_index < 6
+            self.set_light(
+                true,
+                SOLUTION[self.demo_index]
+            )
+
+            self.demo_index += 1
+
+        elif self.demo_index <= 7
+            self.set_light(false, "FFFFFF")
+
+            self.demo_index += 1
+
+        else
+            self.demo_index = 0
+        end
     end
 end
 
-var cash_register_driver = CashRegister()
-tasmota.add_driver(cash_register_driver)
+var handgame_driver = Handgame1()
+var handgamereaderdriver = Handgamereader()
 
-def cash_reset_cmd()
-    cash_register_driver.reset()
-    tasmota.resp_cmnd_done()
-end
+tasmota.add_driver(handgamereaderdriver)
+tasmota.add_driver(handgame_driver)
 
-def cash_enable_cmd()
-    cash_register_driver.enable_game()
-end
+tasmota.add_cmd(
+    "enable",
+    / -> handgame_driver.enable_game()
+)
 
-def cash_disable_cmd()
-    cash_register_driver.disable_game()
-end
+tasmota.add_cmd(
+    "disable",
+    / -> handgame_driver.disable_game()
+)
 
-tasmota.add_cmd("CashReset", cash_reset_cmd)
-tasmota.add_cmd("enable", cash_enable_cmd)
-tasmota.add_cmd("disable", cash_disable_cmd)
-
-print("CashRegister driver loaded")
+print("Handgame1 driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
-print("CashReset - reset")
-print("enable - keyboard and screen enabled")
-print("disable - keyboard and screen disabled")
+print("enable - game enabled")
+print("disable - game disabled")
 print("--------------------------------------------------------------")
