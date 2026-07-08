@@ -14,23 +14,21 @@ using namespace std;
 // Sebességre optimalizált alap
 #define DELAY_BASE 1
 
-unsigned long lastOnlineToggle = 0;
-const unsigned long ONLINE_INTERVAL = 10000;
-
 // Mozgási paraméterek
-long MOVE_STEPS = 800000;
+long MOVE_STEPS = 700000;
 
 // A lehető legnagyobb sebességre hangolva
-int START_DELAY = 100;     // indulási késleltetés (fél periódus)
-int MIN_DELAY = 2;        // végsebesség 
-int ACCEL_STEPS = 8000;   // rövid, agresszív gyorsítás
-int STEP_HIGH_US = 1;     // step HIGH pulse szélesség
+int START_DELAY = 150;     // indulási késleltetés (fél periódus)
+int MIN_DELAY = 3;         // végsebesség 
+int ACCEL_STEPS = 8000;    // rövid, agresszív gyorsítás
+int STEP_HIGH_US = 1;      // step HIGH pulse szélesség
 
 string espID = string(ID);
 
 int dir = 0;
-bool onlineState = true;
 bool moving = false;
+bool duckActiveState = false;
+
 string receivedMessage = "";
 char incomingChar;
 
@@ -38,7 +36,6 @@ void performHoming();
 void moveWithRamp(long steps);
 void moveSimple(long steps, int delayUs = 20);
 void readSerial();
-void handleOnlinePing();
 void(* resetFunc) (void) = 0;
 
 HardwareSerial CommandSerial(1);
@@ -60,20 +57,33 @@ inline void onlineWrite(bool state) {
   gpio_set_level((gpio_num_t)PIN_ONLINE_PING, state ? 1 : 0);
 }
 
+// HIGH = kacsa aktív / fut / homingol / újra fog indulni
+// LOW  = kacsa ténylegesen áll, és nem fog magától újraindulni
+inline void duckActiveWrite(bool state) {
+  if (duckActiveState != state) {
+    duckActiveState = state;
+    onlineWrite(state);
+  }
+}
+
 inline void doStepFast(int delayMicros) {
   stepHigh();
   delayMicroseconds(STEP_HIGH_US);
   stepLow();
-  if (delayMicros > 0) delayMicroseconds(delayMicros);
+
+  if (delayMicros > 0) {
+    delayMicroseconds(delayMicros);
+  }
 }
 
 void setup() {
   CommandSerial.begin(9600, SERIAL_8N1, PIN_TASMOTA_RX, -1);
   Serial.begin(115200);
   delay(100);
-  while (CommandSerial.available()) CommandSerial.read();
 
-  lastOnlineToggle = millis();
+  while (CommandSerial.available()) {
+    CommandSerial.read();
+  }
 
   Serial.print("Stepper Ready. ID:");
   Serial.println(espID.c_str());
@@ -87,8 +97,11 @@ void setup() {
 
   stepLow();
   dirWrite(dir);
-  onlineWrite(LOW);
 
+  duckActiveWrite(false);
+
+  // Kezdő homing közben HIGH lesz,
+  // homing után, ha lent áll, LOW lesz.
   performHoming();
 }
 
@@ -96,20 +109,39 @@ void loop() {
   readSerial();
 
   if (moving) {
+    duckActiveWrite(true);
+
     dir = 0;
     dirWrite(dir);
     moveWithRamp(MOVE_STEPS);
+
+    // Irányváltási szünet alatt marad HIGH, ha még aktív
     delay(50);
+
+    if (!moving) {
+      duckActiveWrite(false);
+      return;
+    }
 
     dir = 1;
     dirWrite(dir);
     moveWithRamp(MOVE_STEPS);
+
+    // Irányváltási szünet alatt marad HIGH, ha még aktív
     delay(50);
+
+    if (!moving) {
+      duckActiveWrite(false);
+      return;
+    }
   }
 }
 
 void performHoming() {
   long stepCount = 0;
+
+  // Homing közben mindig HIGH
+  duckActiveWrite(true);
 
   if (!digitalRead(PIN_HOME)) {
     dir = 0;
@@ -138,21 +170,38 @@ void performHoming() {
       readSerial();
     }
   }
+
+  // Homing vége:
+  // ha a kacsa továbbra is aktív futásban van, marad HIGH
+  // ha nem aktív, LOW lesz
+  duckActiveWrite(moving);
 }
 
 void moveWithRamp(long steps) {
   long stepCount = 0;
 
+  duckActiveWrite(true);
+
   while (stepCount < steps && moving) {
     // Ezeket muszáj nézni minden lépésben
     if (!digitalRead(PIN_HOME) && dir == 1) {
+      duckActiveWrite(moving);
       return;
     }
 
     if (!digitalRead(PIN_LASER)) {
+      // Lelövéskor a kacsa megáll,
+      // de a jel marad HIGH a várakozás és a homing alatt.
       moving = false;
+      duckActiveWrite(true);
+
       delay(1000);
+
       performHoming();
+
+      // Lelövés utáni teljes visszaállás után LOW
+      duckActiveWrite(false);
+
       Serial.println("Duck shot down");
       return;
     }
@@ -174,17 +223,21 @@ void moveWithRamp(long steps) {
       readSerial();
     }
   }
+
+  // Ha stop miatt állt meg, LOW.
+  // Ha csak irányváltási ciklusba ért, moving még true, ezért HIGH marad.
+  duckActiveWrite(moving);
 }
 
 void moveSimple(long steps, int delayUs) {
+  duckActiveWrite(true);
+
   for (long i = 0; i < steps; i++) {
     doStepFast(delayUs);
   }
 }
 
 void readSerial() {
-  handleOnlinePing();
-
   while (CommandSerial.available()) {
     incomingChar = CommandSerial.read();
 
@@ -197,13 +250,15 @@ void readSerial() {
       else if (receivedMessage == espID + " move") {
         Serial.println(">> Start continuous motion");
         moving = true;
+        duckActiveWrite(true);
       }
       else if (receivedMessage == espID + " stop") {
         Serial.println(">> Stop motion");
         moving = false;
+        duckActiveWrite(false);
       }
-      else if (receivedMessage.substr(0,11) == espID + " speed") {
-        int speedVal = stoi(receivedMessage.substr(12,2));
+      else if (receivedMessage.substr(0, 11) == espID + " speed") {
+        int speedVal = stoi(receivedMessage.substr(12, 2));
 
         // Ugyanaz a parancs marad, de agresszívebb sebesség mappinggel
         switch (speedVal) {
@@ -246,30 +301,30 @@ void readSerial() {
         if (espID == "duck1" || espID == "duck3") {
           Serial.println(">> Start continuous motion");
           moving = true;
+          duckActiveWrite(true);
         }
         else {
+          // A késleltetés alatt még nem indult el,
+          // ezért itt LOW marad.
+          duckActiveWrite(false);
+
           delay(5000);
+
           Serial.println(">> Start continuous motion");
           moving = true;
+          duckActiveWrite(true);
         }
       }
       else if (receivedMessage == "stopall") {
         Serial.println(">> Stop all motion");
         moving = false;
+        duckActiveWrite(false);
       }
+
       receivedMessage = "";
     }
     else {
       receivedMessage += incomingChar;
     }
-  }
-}
-
-void handleOnlinePing() {
-  unsigned long now = millis();
-  if ((now - lastOnlineToggle) >= ONLINE_INTERVAL) {
-    onlineState = !onlineState;
-    onlineWrite(onlineState ? LOW : HIGH);
-    lastOnlineToggle = now;
   }
 }

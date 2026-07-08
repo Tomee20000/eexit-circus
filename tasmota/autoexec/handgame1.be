@@ -40,7 +40,7 @@ class Handgame1
     var demo_index
     var demo_active
     var selector_started
-    var first_correct
+    var video_started
 
     def set_light(power, color)
         light.set({
@@ -71,6 +71,8 @@ class Handgame1
             self.set_light(true, color)
             tasmota.delay(250)
         end
+
+        self.set_light(true, color)
     end
 
     def solved()
@@ -98,7 +100,6 @@ class Handgame1
         )
 
         self.next_color = 0
-        self.first_correct = false
         self.demo_active = false
         self.selector_started = true
 
@@ -154,8 +155,8 @@ class Handgame1
             end
 
             if self.selected_color == SOLUTION[self.next_color]
-                if !self.first_correct
-                    self.first_correct = true
+                if !self.video_started
+                    self.video_started = true
 
                     mqtt.publish(
                         VIDEO_TOPIC,
@@ -189,7 +190,7 @@ class Handgame1
         self.demo_index = 0
         self.demo_active = false
         self.selector_started = false
-        self.first_correct = false
+        self.video_started = false
 
         self.set_light(false, "FFFFFF")
 
@@ -211,7 +212,7 @@ class Handgame1
         self.demo_index = 0
         self.demo_active = true
         self.selector_started = false
-        self.first_correct = false
+        self.video_started = false
 
         self.set_light(false, "FFFFFF")
 
@@ -225,7 +226,7 @@ class Handgame1
         self.demo_index = 0
         self.demo_active = false
         self.selector_started = false
-        self.first_correct = false
+        self.video_started = false
 
         self.set_light(false, "FFFFFF")
 

@@ -16,6 +16,15 @@ var LDR_PINS = [27, 14, 13, 23]
 var LDR_ACTIVE_LOW = true
 var LDR_USE_PULLUP = false
 
+var DUCK_MOVE_PINS = [32, 33, 25, 26]
+var DUCK_MOVE_ACTIVE_HIGH = true
+
+var WATCHDOG_INTERVAL_MS = 50
+var MOVE_START_GRACE_MS = 1200
+var MOVE_STOP_GRACE_MS = 700
+var HOME_START_TIMEOUT_MS = 1500
+var HOME_LOW_STABLE_MS = 300
+
 var LDR_REARM_MS = 80
 var LDR_LOCK_MS = 250
 
@@ -32,6 +41,10 @@ var SOLVED_TOPIC = "CDUCKGAME"
 var SOLVED_PAYLOAD = '{"data":"SOLVED"}'
 
 var SHOT_TOPIC = "CDUCKGAME"
+
+var duck_game_driver = nil
+var wave_driver = nil
+var duck_move_watchdog = nil
 
 # =========================================================
 # SERIAL
@@ -69,11 +82,243 @@ tasmota.add_cmd(
 )
 
 # =========================================================
+# DUCK MOVE WATCHDOG
+# =========================================================
+class DuckMoveWatchdog
+
+    var wanted, has_moved, recovering
+    var move_cmd_ms, low_since
+    var home_cmd_ms, home_seen_high, home_low_since
+    var next_check_ms
+
+    def init()
+        self.wanted = [false, false, false, false]
+        self.has_moved = [false, false, false, false]
+        self.recovering = [false, false, false, false]
+
+        self.move_cmd_ms = [0, 0, 0, 0]
+        self.low_since = [0, 0, 0, 0]
+
+        self.home_cmd_ms = [0, 0, 0, 0]
+        self.home_seen_high = [false, false, false, false]
+        self.home_low_since = [0, 0, 0, 0]
+
+        self.next_check_ms = 0
+
+        for i: 0..3
+            gpio.pin_mode(DUCK_MOVE_PINS[i], gpio.INPUT)
+        end
+
+        tasmota.add_fast_loop(/ -> self.loop())
+    end
+
+    def write_duck(idx, cmd)
+        serial_port.write(
+            bytes().fromstring(
+                "duck" .. idx .. " " .. cmd .. "\n"
+            )
+        )
+    end
+
+    def read_move(i)
+        var moving = gpio.digital_read(DUCK_MOVE_PINS[i])
+
+        if !DUCK_MOVE_ACTIVE_HIGH
+            moving = !moving
+        end
+
+        return moving
+    end
+
+    def start_duck(idx)
+        if idx < 1 || idx > 4
+            return
+        end
+
+        var i = idx - 1
+        var now = tasmota.millis()
+
+        self.wanted[i] = true
+        self.has_moved[i] = false
+        self.recovering[i] = false
+
+        self.move_cmd_ms[i] = now
+        self.low_since[i] = 0
+
+        self.home_cmd_ms[i] = 0
+        self.home_seen_high[i] = false
+        self.home_low_since[i] = 0
+    end
+
+    def start_all()
+        for idx: 1..4
+            self.start_duck(idx)
+        end
+    end
+
+    def stop_duck(idx)
+        if idx < 1 || idx > 4
+            return
+        end
+
+        var i = idx - 1
+
+        self.wanted[i] = false
+        self.has_moved[i] = false
+        self.recovering[i] = false
+
+        self.move_cmd_ms[i] = 0
+        self.low_since[i] = 0
+
+        self.home_cmd_ms[i] = 0
+        self.home_seen_high[i] = false
+        self.home_low_since[i] = 0
+    end
+
+    def stop_all()
+        for idx: 1..4
+            self.stop_duck(idx)
+        end
+    end
+
+    def resend_move(idx)
+        var i = idx - 1
+        var now = tasmota.millis()
+
+        self.write_duck(idx, "move")
+
+        self.wanted[i] = true
+        self.has_moved[i] = false
+        self.recovering[i] = false
+        self.move_cmd_ms[i] = now
+        self.low_since[i] = 0
+
+        print("Duck" .. idx .. " move retry")
+    end
+
+    def start_recovery(idx)
+        var i = idx - 1
+        var now = tasmota.millis()
+
+        self.write_duck(idx, "home")
+
+        self.recovering[i] = true
+        self.home_cmd_ms[i] = now
+        self.home_seen_high[i] = false
+        self.home_low_since[i] = 0
+        self.low_since[i] = 0
+
+        print("Duck" .. idx .. " stopped, homing")
+    end
+
+    def finish_recovery(idx)
+        var i = idx - 1
+        var now = tasmota.millis()
+
+        self.write_duck(idx, "move")
+
+        self.recovering[i] = false
+        self.wanted[i] = true
+        self.has_moved[i] = false
+        self.move_cmd_ms[i] = now
+        self.low_since[i] = 0
+
+        self.home_cmd_ms[i] = 0
+        self.home_seen_high[i] = false
+        self.home_low_since[i] = 0
+
+        print("Duck" .. idx .. " homing done, moving")
+    end
+
+    def handle_recovery(i, idx, moving, now)
+        if moving
+            self.home_seen_high[i] = true
+            self.home_low_since[i] = 0
+            return
+        end
+
+        if !self.home_seen_high[i]
+            if now - self.home_cmd_ms[i] >= HOME_START_TIMEOUT_MS
+                self.finish_recovery(idx)
+            end
+
+            return
+        end
+
+        if self.home_low_since[i] == 0
+            self.home_low_since[i] = now
+        end
+
+        if now - self.home_low_since[i] >= HOME_LOW_STABLE_MS
+            self.finish_recovery(idx)
+        end
+    end
+
+    def loop()
+        var now = tasmota.millis()
+
+        if now < self.next_check_ms
+            return
+        end
+
+        self.next_check_ms = now + WATCHDOG_INTERVAL_MS
+
+        for i: 0..3
+            var idx = i + 1
+            var moving = self.read_move(i)
+
+            if wave_driver != nil && wave_driver.duck_is_down(idx)
+                self.stop_duck(idx)
+                continue
+            end
+
+            if self.recovering[i]
+                self.handle_recovery(i, idx, moving, now)
+                continue
+            end
+
+            if !self.wanted[i]
+                continue
+            end
+
+            if moving
+                self.has_moved[i] = true
+                self.low_since[i] = 0
+                continue
+            end
+
+            if now - self.move_cmd_ms[i] < MOVE_START_GRACE_MS
+                self.low_since[i] = 0
+                continue
+            end
+
+            if self.low_since[i] == 0
+                self.low_since[i] = now
+            end
+
+            if now - self.low_since[i] < MOVE_STOP_GRACE_MS
+                continue
+            end
+
+            if self.has_moved[i]
+                self.start_recovery(idx)
+            else
+                self.resend_move(idx)
+            end
+        end
+    end
+end
+
+# =========================================================
 # DUCK GAME DRIVER
 # =========================================================
 class DuckGameDriver
 
     def home(cmd, idx)
+        if duck_move_watchdog != nil
+            duck_move_watchdog.stop_duck(idx)
+        end
+
         serial_port.write(
             bytes().fromstring("duck" .. idx .. " home\n")
         )
@@ -81,6 +326,10 @@ class DuckGameDriver
     end
 
     def home_all(cmd, idx)
+        if duck_move_watchdog != nil
+            duck_move_watchdog.stop_all()
+        end
+
         serial_port.write(
             bytes().fromstring("homeall\n")
         )
@@ -91,6 +340,11 @@ class DuckGameDriver
         serial_port.write(
             bytes().fromstring("duck" .. idx .. " move\n")
         )
+
+        if duck_move_watchdog != nil
+            duck_move_watchdog.start_duck(idx)
+        end
+
         tasmota.resp_cmnd("duck" .. idx .. " moving")
     end
 
@@ -98,12 +352,22 @@ class DuckGameDriver
         serial_port.write(
             bytes().fromstring("moveall\n")
         )
+
         tasmota.cmd("ledinit")
         tasmota.cmd("enable")
+
+        if duck_move_watchdog != nil
+            duck_move_watchdog.start_all()
+        end
+
         tasmota.resp_cmnd("moving all")
     end
 
     def stop(cmd, idx)
+        if duck_move_watchdog != nil
+            duck_move_watchdog.stop_duck(idx)
+        end
+
         serial_port.write(
             bytes().fromstring("duck" .. idx .. " stop\n")
         )
@@ -111,6 +375,10 @@ class DuckGameDriver
     end
 
     def stop_all(cmd, idx)
+        if duck_move_watchdog != nil
+            duck_move_watchdog.stop_all()
+        end
+
         serial_port.write(
             bytes().fromstring("stopall\n")
         )
@@ -118,6 +386,10 @@ class DuckGameDriver
     end
 
     def restart(cmd, idx)
+        if duck_move_watchdog != nil
+            duck_move_watchdog.stop_duck(idx)
+        end
+
         serial_port.write(
             bytes().fromstring("duck" .. idx .. " restart\n")
         )
@@ -224,6 +496,15 @@ class WaveDriver
         tasmota.add_fast_loop(
             / -> self.anim_loop()
         )
+    end
+
+    def duck_is_down(idx)
+        if idx < 1 || idx > 4
+            return true
+        end
+
+        return self.duck_anim[idx - 1] ||
+               self.duck_red[idx - 1]
     end
 
     def read_ldr_pin(i)
@@ -451,6 +732,10 @@ class WaveDriver
             return
         end
 
+        if duck_move_watchdog != nil
+            duck_move_watchdog.stop_duck(idx)
+        end
+
         self.duck_anim[idx - 1] = true
         self.blink_state = true
 
@@ -577,8 +862,9 @@ end
 # =========================================================
 # INIT
 # =========================================================
-var duck_game_driver = DuckGameDriver()
-var wave_driver = WaveDriver()
+duck_game_driver = DuckGameDriver()
+wave_driver = WaveDriver()
+duck_move_watchdog = DuckMoveWatchdog()
 
 tasmota.add_driver(duck_game_driver)
 tasmota.add_driver(wave_driver)
@@ -685,6 +971,11 @@ print("ledinit - reset LED state and internal flags")
 print("ledreset - clear shot/red LED states")
 print("duckshoot<n> - start red blinking animation behind duck<n> for 5 seconds")
 print("ldrstatus - show current LDR raw hit states")
+print("--------------------------------------------------------------")
+
+print("Duck move watchdog loaded")
+print("Duck move pins: duck1=32 duck2=33 duck3=25 duck4=26")
+print("HIGH=moving LOW=stopped")
 print("--------------------------------------------------------------")
 
 tasmota.cmd("homeall")

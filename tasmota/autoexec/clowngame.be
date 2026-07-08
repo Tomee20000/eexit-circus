@@ -20,10 +20,10 @@ var NOSE4 = 14
 var NOSE5 = 12
 
 var BUTTON1 = 33
-var BUTTON2 = 32
-var BUTTON3 = 35
-var BUTTON4 = 34
-var BUTTON5 = 39
+var BUTTON2 = 39
+var BUTTON3 = 34
+var BUTTON4 = 32
+var BUTTON5 = 35
 
 var EYE1 = 23
 var EYE2 = 22

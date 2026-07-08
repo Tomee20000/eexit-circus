@@ -8,7 +8,6 @@
 -#
 
 import mqtt
-import json
 
 var INPUT1 = 26
 var INPUT2 = 27
@@ -17,9 +16,7 @@ var INPUT4 = 13
 var INPUT5 = 23
 var INPUT6 = 22
 
-var HAND_TOPIC = "CHANDGAME1"
 var ELEPHANT_TOPIC = "CELEPHANT"
-var GAME_TOPIC = "CHANDGAME"
 
 var SOLUTION_SEQUENCE = [
     "FFFFFF",
@@ -42,10 +39,9 @@ var COLOR_MAP = [
 class Elephant
     var current_color
     var last_input
+    var selector_inited
     var enable
     var demo_index
-    var demo_round
-    var solved
 
     def set_light(power, color)
         light.set({
@@ -56,86 +52,40 @@ class Elephant
         tasmota.cmd("State")
     end
 
-    def green_blink()
-        for i: 1..3
-            self.set_light(false, "008000")
-            tasmota.delay(250)
-
-            self.set_light(true, "008000")
-            tasmota.delay(250)
+    def read_selector()
+        if gpio.digital_read(INPUT1)
+            return 0
+        elif gpio.digital_read(INPUT2)
+            return 1
+        elif gpio.digital_read(INPUT3)
+            return 2
+        elif gpio.digital_read(INPUT4)
+            return 3
+        elif gpio.digital_read(INPUT5)
+            return 4
+        elif gpio.digital_read(INPUT6)
+            return 5
         end
 
-        self.set_light(false, "008000")
-    end
-
-    def on_mqtt_message(topic, payload)
-        if topic == HAND_TOPIC
-            if payload == "SOLVED_BLINK"
-                if self.solved
-                    return
-                end
-
-                self.solved = true
-                self.enable = false
-                self.green_blink()
-                return
-            end
-
-            return
-        end
-
-        if topic == GAME_TOPIC
-            var game_json = json.load(payload)
-            var game_data = game_json.find("data", nil)
-
-            if game_data == "WRONG"
-                self.demo_index = 0
-                self.demo_round = 0
-                self.last_input = nil
-            end
-
-            if game_data == "SOLVED"
-                if self.solved
-                    return
-                end
-
-                self.solved = true
-                self.enable = false
-                self.set_light(false, "FFFFFF")
-            end
-
-            return
-        end
+        return nil
     end
 
     def init()
-        self.current_color = 0
+        self.current_color = nil
         self.last_input = nil
+        self.selector_inited = false
         self.enable = false
         self.demo_index = 0
-        self.demo_round = 0
-        self.solved = false
 
         self.set_light(false, "FFFFFF")
-
-        mqtt.subscribe(
-            HAND_TOPIC,
-            /t, idx, data, b -> self.on_mqtt_message(t, data)
-        )
-
-        mqtt.subscribe(
-            GAME_TOPIC,
-            /t, idx, data, b -> self.on_mqtt_message(t, data)
-        )
     end
 
     def enable_game()
         self.enable = true
-        self.current_color = 0
+        self.current_color = nil
         self.last_input = nil
+        self.selector_inited = false
         self.demo_index = 0
-        self.demo_round = 0
-        self.solved = false
 
         self.set_light(false, "FFFFFF")
 
@@ -144,11 +94,10 @@ class Elephant
 
     def disable_game()
         self.enable = false
-        self.current_color = 0
+        self.current_color = nil
         self.last_input = nil
+        self.selector_inited = false
         self.demo_index = 0
-        self.demo_round = 0
-        self.solved = false
 
         self.set_light(false, "FFFFFF")
 
@@ -161,16 +110,18 @@ class Elephant
     end
 
     def publish_color()
-        var color = COLOR_MAP[self.current_color]
+        if self.current_color == nil
+            return
+        end
 
         mqtt.publish(
             ELEPHANT_TOPIC,
-            color
+            COLOR_MAP[self.current_color]
         )
     end
 
     def every_second()
-        if !self.enable || self.solved
+        if !self.enable
             return
         end
 
@@ -189,38 +140,35 @@ class Elephant
 
         else
             self.demo_index = 0
-            self.demo_round += 1
         end
     end
 
     def every_50ms()
-        if !self.enable || self.solved
+        if !self.enable
             return
         end
 
-        if gpio.digital_read(INPUT1)
-            self.current_color = 0
-        elif gpio.digital_read(INPUT2)
-            self.current_color = 1
-        elif gpio.digital_read(INPUT3)
-            self.current_color = 2
-        elif gpio.digital_read(INPUT4)
-            self.current_color = 3
-        elif gpio.digital_read(INPUT5)
-            self.current_color = 4
-        elif gpio.digital_read(INPUT6)
-            self.current_color = 5
+        var new_color = self.read_selector()
+
+        if !self.selector_inited
+            self.current_color = new_color
+            self.last_input = new_color
+            self.selector_inited = true
+            return
         end
 
-        if self.last_input == nil
-            self.last_input = self.current_color
-
-        elif self.last_input != self.current_color &&
-             self.demo_round >= 1
-
-            self.last_input = self.current_color
-            self.publish_color()
+        if new_color == self.last_input
+            return
         end
+
+        self.last_input = new_color
+
+        if new_color == nil
+            return
+        end
+
+        self.current_color = new_color
+        self.publish_color()
     end
 end
 
