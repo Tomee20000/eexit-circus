@@ -37,9 +37,6 @@ class Handgame1
     var enable
     var selected_color
     var next_color
-    var demo_index
-    var demo_active
-    var selector_started
     var video_started
 
     def set_light(power, color)
@@ -77,8 +74,6 @@ class Handgame1
 
     def solved()
         self.enable = false
-        self.demo_active = false
-        self.selector_started = false
 
         mqtt.publish(
             HAND_TOPIC,
@@ -100,8 +95,6 @@ class Handgame1
         )
 
         self.next_color = 0
-        self.demo_active = false
-        self.selector_started = true
 
         if self.selected_color != nil
             self.set_light(true, self.selected_color)
@@ -115,9 +108,6 @@ class Handgame1
             if !self.enable
                 return
             end
-
-            self.selector_started = true
-            self.demo_active = false
 
             if payload == "000000"
                 self.selected_color = nil
@@ -133,10 +123,6 @@ class Handgame1
 
         if topic == HAND_SENSOR_TOPIC
             if !self.enable
-                return
-            end
-
-            if !self.selector_started
                 return
             end
 
@@ -187,9 +173,6 @@ class Handgame1
         self.enable = false
         self.selected_color = nil
         self.next_color = 0
-        self.demo_index = 0
-        self.demo_active = false
-        self.selector_started = false
         self.video_started = false
 
         self.set_light(false, "FFFFFF")
@@ -209,9 +192,6 @@ class Handgame1
         self.enable = true
         self.selected_color = nil
         self.next_color = 0
-        self.demo_index = 0
-        self.demo_active = true
-        self.selector_started = false
         self.video_started = false
 
         self.set_light(false, "FFFFFF")
@@ -223,37 +203,11 @@ class Handgame1
         self.enable = false
         self.selected_color = nil
         self.next_color = 0
-        self.demo_index = 0
-        self.demo_active = false
-        self.selector_started = false
         self.video_started = false
 
         self.set_light(false, "FFFFFF")
 
         tasmota.resp_cmnd("Game disabled")
-    end
-
-    def every_second()
-        if !self.enable || !self.demo_active
-            return
-        end
-
-        if self.demo_index < 6
-            self.set_light(
-                true,
-                SOLUTION[self.demo_index]
-            )
-
-            self.demo_index += 1
-
-        elif self.demo_index <= 7
-            self.set_light(false, "FFFFFF")
-
-            self.demo_index += 1
-
-        else
-            self.demo_index = 0
-        end
     end
 end
 

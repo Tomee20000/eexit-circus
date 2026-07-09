@@ -314,6 +314,11 @@ class KnifeGame
 
                 if !self.sound_sent
                     mqtt.publish(
+                        "CKNIFEGAME",
+                        '{"data":"FIRST"}'
+                    )
+
+                    mqtt.publish(
                         "cmnd/CANIMALWHEEL/i2splay",
                         "mp3/knife.mp3"
                     )

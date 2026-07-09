@@ -39,7 +39,6 @@ var HOMING_MAX_PWM = 870
 var HOMING_RAMP_MS = 400
 
 var DROP_OPEN_MS = 1000
-var FINAL_UP_EXTRA_MS = 500
 var FINAL_UP_MAX_MS = 7500
 var RELAY_DELAY_MS = 100
 
@@ -61,7 +60,6 @@ class ClawMachine
     var in_claw_animation, is_coin_inserted
     var phase, anim_id
     var claw_ramp_start, homing_ramp_start
-    var final_extra_started
 
     def pwm_pair(pin1, pin2, v1, v2)
         if v1 < 0
@@ -165,7 +163,7 @@ class ClawMachine
     end
 
     def fast_loop()
-        if !gpio.digital_read(COIN) && !self.is_coin_inserted
+        if !gpio.digital_read(COIN) && !self.is_coin_inserted && !self.in_claw_animation
             self.enable_game()
 
             var payload = '{"data":"ENABLED"}'
@@ -187,7 +185,6 @@ class ClawMachine
         self.anim_id = 0
         self.claw_ramp_start = 0
         self.homing_ramp_start = 0
-        self.final_extra_started = false
 
         self.all_motors_stop()
         self.claw_relay_off()
@@ -203,7 +200,8 @@ class ClawMachine
 
     def disable_game()
         self.is_coin_inserted = false
-        tasmota.resp_cmnd("Game disabled")
+        self.start_disable_homing()
+        tasmota.resp_cmnd("Game disabled, homing started")
     end
 
     def start_claw_animation()
@@ -214,15 +212,8 @@ class ClawMachine
 
         self.in_claw_animation = true
         self.phase = 1
-        self.final_extra_started = false
 
-        self.motor_lr(0, 0)
-        self.motor_fb(0, 0)
-        self.motor_claw(0, 0)
-
-        self.motor_lr_state = 0
-        self.motor_fb_state = 0
-        self.motor_claw_state = 0
+        self.all_motors_stop()
 
         gpio.digital_write(CLAW, gpio.LOW)
 
@@ -266,6 +257,11 @@ class ClawMachine
 
         print("claw up soft")
 
+        if gpio.digital_read(ENDSTOP_CLAW)
+            self.claw_home(id)
+            return
+        end
+
         self.phase = 4
         self.motor_claw_state = 2
         self.claw_ramp_start = tasmota.millis()
@@ -289,11 +285,21 @@ class ClawMachine
         self.phase = 5
         self.homing_ramp_start = tasmota.millis()
 
-        self.motor_lr_state = 1
-        self.motor_fb_state = 2
+        if gpio.digital_read(ENDSTOP_L)
+            self.motor_lr_state = 0
+            self.motor_lr(0, 0)
+        else
+            self.motor_lr_state = 1
+            self.motor_lr(1, HOMING_START_PWM)
+        end
 
-        self.motor_lr(1, HOMING_START_PWM)
-        self.motor_fb(2, HOMING_START_PWM)
+        if gpio.digital_read(ENDSTOP_F)
+            self.motor_fb_state = 0
+            self.motor_fb(0, 0)
+        else
+            self.motor_fb_state = 2
+            self.motor_fb(2, HOMING_START_PWM)
+        end
     end
 
     def drop_ball()
@@ -338,25 +344,17 @@ class ClawMachine
 
         print("final claw up full speed")
 
+        if gpio.digital_read(ENDSTOP_CLAW)
+            self.finish_animation(id)
+            return
+        end
+
         self.phase = 8
         self.motor_claw_state = 2
-        self.final_extra_started = false
 
         self.motor_claw(2, PWM_MAX)
 
         tasmota.set_timer(FINAL_UP_MAX_MS, / -> self.finish_animation(id))
-    end
-
-    def final_extra_up(id)
-        if !self.valid_anim(id) || self.phase != 8 || self.final_extra_started
-            return
-        end
-
-        print("final claw extra up")
-
-        self.final_extra_started = true
-
-        tasmota.set_timer(FINAL_UP_EXTRA_MS, / -> self.finish_animation(id))
     end
 
     def finish_animation(id)
@@ -372,11 +370,96 @@ class ClawMachine
 
         self.phase = 0
         self.in_claw_animation = false
-        self.final_extra_started = false
+    end
+
+    def start_disable_homing()
+        print("disable homing")
+
+        self.anim_id = self.anim_id + 1
+        var id = self.anim_id
+
+        self.in_claw_animation = true
+        self.phase = 9
+
+        self.all_motors_stop()
+        gpio.digital_write(CLAW, gpio.LOW)
+
+        if gpio.digital_read(ENDSTOP_CLAW)
+            self.claw_relay_off()
+            self.start_xy_homing_only()
+            return
+        end
+
+        self.claw_relay_on()
+
+        self.motor_claw_state = 2
+        self.claw_ramp_start = tasmota.millis()
+        self.motor_claw(2, UP_START_PWM)
+
+        tasmota.set_timer(FINAL_UP_MAX_MS, / -> self.disable_claw_homing_timeout(id))
+    end
+
+    def disable_claw_homing_timeout(id)
+        if !self.valid_anim(id) || self.phase != 9
+            return
+        end
+
+        print("disable claw homing timeout")
+
+        self.motor_claw_state = 0
+        self.motor_claw(0, 0)
+        self.claw_relay_off()
+
+        self.start_xy_homing_only()
+    end
+
+    def start_xy_homing_only()
+        print("xy homing only")
+
+        self.phase = 10
+        self.homing_ramp_start = tasmota.millis()
+
+        if gpio.digital_read(ENDSTOP_L)
+            self.motor_lr_state = 0
+            self.motor_lr(0, 0)
+        else
+            self.motor_lr_state = 1
+            self.motor_lr(1, HOMING_START_PWM)
+        end
+
+        if gpio.digital_read(ENDSTOP_F)
+            self.motor_fb_state = 0
+            self.motor_fb(0, 0)
+        else
+            self.motor_fb_state = 2
+            self.motor_fb(2, HOMING_START_PWM)
+        end
+
+        if self.motor_lr_state == 0 && self.motor_fb_state == 0
+            self.finish_homing_only()
+        end
+    end
+
+    def finish_homing_only()
+        print("homing finished")
+
+        self.all_motors_stop()
+        self.claw_relay_off()
+        gpio.digital_write(CLAW, gpio.LOW)
+
+        self.phase = 0
+        self.in_claw_animation = false
     end
 
     def update_claw_ramp()
         if self.phase == 4
+            if gpio.digital_read(ENDSTOP_CLAW)
+                self.motor_claw_state = 0
+                self.motor_claw(0, 0)
+                self.claw_home(self.anim_id)
+                return
+            end
+
             var duty = self.ramp_value(
                 UP_START_PWM,
                 PWM_MAX,
@@ -387,16 +470,37 @@ class ClawMachine
             self.motor_claw(2, duty)
 
         elif self.phase == 8
+            if gpio.digital_read(ENDSTOP_CLAW)
+                self.motor_claw_state = 0
+                self.motor_claw(0, 0)
+                self.finish_animation(self.anim_id)
+                return
+            end
+
             self.motor_claw(2, PWM_MAX)
 
+        elif self.phase == 9
             if gpio.digital_read(ENDSTOP_CLAW)
-                self.final_extra_up(self.anim_id)
+                self.motor_claw_state = 0
+                self.motor_claw(0, 0)
+                self.claw_relay_off()
+                self.start_xy_homing_only()
+                return
             end
+
+            var duty2 = self.ramp_value(
+                UP_START_PWM,
+                PWM_MAX,
+                UP_RAMP_MS,
+                self.claw_ramp_start
+            )
+
+            self.motor_claw(2, duty2)
         end
     end
 
     def update_homing_ramp()
-        if self.phase != 5
+        if self.phase != 5 && self.phase != 10
             return
         end
 
@@ -408,11 +512,21 @@ class ClawMachine
         )
 
         if self.motor_lr_state == 1
-            self.motor_lr(1, duty)
+            if gpio.digital_read(ENDSTOP_L)
+                self.motor_lr_state = 0
+                self.motor_lr(0, 0)
+            else
+                self.motor_lr(1, duty)
+            end
         end
 
         if self.motor_fb_state == 2
-            self.motor_fb(2, duty)
+            if gpio.digital_read(ENDSTOP_F)
+                self.motor_fb_state = 0
+                self.motor_fb(0, 0)
+            else
+                self.motor_fb(2, duty)
+            end
         end
     end
 
@@ -431,7 +545,7 @@ class ClawMachine
         self.idle_claw_safe()
 
         if !self.in_claw_animation && self.is_coin_inserted
-            if !gpio.digital_read(JOY_L) && self.motor_lr_state != 1
+            if !gpio.digital_read(JOY_L) && !gpio.digital_read(ENDSTOP_L) && self.motor_lr_state != 1
                 print("left")
                 self.motor_lr_state = 1
                 self.motor_lr(1, PWM_MAX)
@@ -451,7 +565,7 @@ class ClawMachine
                 self.motor_fb_state = 1
                 self.motor_fb(1, PWM_MAX)
 
-            elif !gpio.digital_read(JOY_B) && self.motor_fb_state != 2
+            elif !gpio.digital_read(JOY_B) && !gpio.digital_read(ENDSTOP_F) && self.motor_fb_state != 2
                 print("backwards")
                 self.motor_fb_state = 2
                 self.motor_fb(2, PWM_MAX)
@@ -478,8 +592,18 @@ class ClawMachine
             self.motor_fb(0, 0)
         end
 
+        if gpio.digital_read(ENDSTOP_CLAW) && self.motor_claw_state == 2
+            print("claw top")
+            self.motor_claw_state = 0
+            self.motor_claw(0, 0)
+        end
+
         if self.phase == 5 && self.motor_lr_state == 0 && self.motor_fb_state == 0
             self.drop_ball()
+        end
+
+        if self.phase == 10 && self.motor_lr_state == 0 && self.motor_fb_state == 0
+            self.finish_homing_only()
         end
     end
 end
