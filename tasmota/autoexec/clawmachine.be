@@ -28,7 +28,10 @@ var COIN = 4
 var PWM_MAX = 1023
 
 var DOWN_MS = 4850
+var EXTRA_DOWN_MS = 2000
+var FULL_DOWN_MS = DOWN_MS + EXTRA_DOWN_MS
 var GRAB_WAIT_MS = 1500
+var FULLCYCLE_GRAB_WAIT_MS = 3000
 
 var UP_TOTAL_MS = 4850
 var UP_START_PWM = 410
@@ -451,6 +454,246 @@ class ClawMachine
         self.in_claw_animation = false
     end
 
+    def claw_down_cmd()
+        print("command claw down")
+
+        self.anim_id = self.anim_id + 1
+        var id = self.anim_id
+
+        self.in_claw_animation = true
+        self.phase = 11
+
+        self.all_motors_stop()
+        gpio.digital_write(CLAW, gpio.LOW)
+        self.claw_relay_on()
+
+        tasmota.set_timer(RELAY_DELAY_MS, / -> self.claw_down_cmd_start(id))
+    end
+
+    def claw_down_cmd_start(id)
+        if !self.valid_anim(id) || self.phase != 11
+            return
+        end
+
+        self.motor_claw_state = 1
+        self.motor_claw(1, PWM_MAX)
+
+        tasmota.set_timer(FULL_DOWN_MS, / -> self.finish_manual_claw(id))
+    end
+
+    def claw_up_cmd()
+        print("command claw up")
+
+        self.anim_id = self.anim_id + 1
+        var id = self.anim_id
+
+        self.in_claw_animation = true
+        self.phase = 12
+
+        self.all_motors_stop()
+        gpio.digital_write(CLAW, gpio.LOW)
+
+        if gpio.digital_read(ENDSTOP_CLAW)
+            self.finish_manual_claw(id)
+            return
+        end
+
+        self.claw_relay_on()
+
+        tasmota.set_timer(RELAY_DELAY_MS, / -> self.claw_up_cmd_start(id))
+    end
+
+    def claw_up_cmd_start(id)
+        if !self.valid_anim(id) || self.phase != 12
+            return
+        end
+
+        if gpio.digital_read(ENDSTOP_CLAW)
+            self.finish_manual_claw(id)
+            return
+        end
+
+        self.motor_claw_state = 2
+        self.motor_claw(2, PWM_MAX)
+
+        tasmota.set_timer(FINAL_UP_MAX_MS, / -> self.finish_manual_claw(id))
+    end
+
+    def finish_manual_claw(id)
+        if !self.valid_anim(id)
+            return
+        end
+
+        print("manual claw finished")
+
+        self.all_motors_stop()
+        self.claw_relay_off()
+        gpio.digital_write(CLAW, gpio.LOW)
+
+        self.phase = 0
+        self.in_claw_animation = false
+    end
+
+    def fullcycle_cmd()
+        print("fullcycle started")
+
+        self.anim_id = self.anim_id + 1
+        var id = self.anim_id
+
+        self.in_claw_animation = true
+        self.phase = 20
+
+        self.all_motors_stop()
+        gpio.digital_write(CLAW, gpio.LOW)
+
+        if gpio.digital_read(ENDSTOP_CLAW)
+            self.claw_relay_off()
+            self.fullcycle_xy_homing()
+            return
+        end
+
+        self.claw_relay_on()
+
+        tasmota.set_timer(RELAY_DELAY_MS, / -> self.fullcycle_claw_home_start(id))
+    end
+
+    def fullcycle_claw_home_start(id)
+        if !self.valid_anim(id) || self.phase != 20
+            return
+        end
+
+        if gpio.digital_read(ENDSTOP_CLAW)
+            self.motor_claw_state = 0
+            self.motor_claw(0, 0)
+            self.claw_relay_off()
+            self.fullcycle_xy_homing()
+            return
+        end
+
+        self.motor_claw_state = 2
+        self.motor_claw(2, PWM_MAX)
+
+        tasmota.set_timer(FINAL_UP_MAX_MS, / -> self.fullcycle_claw_home_timeout(id))
+    end
+
+    def fullcycle_claw_home_timeout(id)
+        if !self.valid_anim(id) || self.phase != 20
+            return
+        end
+
+        self.motor_claw_state = 0
+        self.motor_claw(0, 0)
+        self.claw_relay_off()
+
+        self.fullcycle_xy_homing()
+    end
+
+    def fullcycle_xy_homing()
+        print("fullcycle xy homing")
+
+        self.phase = 21
+        self.homing_ramp_start = tasmota.millis()
+
+        if gpio.digital_read(ENDSTOP_L)
+            self.motor_lr_state = 0
+            self.motor_lr(0, 0)
+        else
+            self.motor_lr_state = 1
+            self.motor_lr(1, HOMING_START_PWM)
+        end
+
+        if gpio.digital_read(ENDSTOP_F)
+            self.motor_fb_state = 0
+            self.motor_fb(0, 0)
+        else
+            self.motor_fb_state = 2
+            self.motor_fb(2, HOMING_START_PWM)
+        end
+
+        if self.motor_lr_state == 0 && self.motor_fb_state == 0
+            self.fullcycle_down()
+        end
+    end
+
+    def fullcycle_down()
+        print("fullcycle down")
+
+        var id = self.anim_id
+
+        self.phase = 22
+
+        self.motor_lr_state = 0
+        self.motor_fb_state = 0
+
+        self.motor_lr(0, 0)
+        self.motor_fb(0, 0)
+
+        gpio.digital_write(CLAW, gpio.LOW)
+        self.claw_relay_on()
+
+        tasmota.set_timer(RELAY_DELAY_MS, / -> self.fullcycle_down_start(id))
+    end
+
+    def fullcycle_down_start(id)
+        if !self.valid_anim(id) || self.phase != 22
+            return
+        end
+
+        self.motor_claw_state = 1
+        self.motor_claw(1, PWM_MAX)
+
+        tasmota.set_timer(FULL_DOWN_MS, / -> self.fullcycle_grab(id))
+    end
+
+    def fullcycle_grab(id)
+        if !self.valid_anim(id) || self.phase != 22
+            return
+        end
+
+        print("fullcycle grab")
+
+        self.phase = 23
+        self.motor_claw_state = 0
+        self.motor_claw(0, 0)
+        gpio.digital_write(CLAW, gpio.LOW)
+
+        tasmota.set_timer(FULLCYCLE_GRAB_WAIT_MS, / -> self.fullcycle_up(id))
+    end
+
+    def fullcycle_up(id)
+        if !self.valid_anim(id) || self.phase != 23
+            return
+        end
+
+        print("fullcycle up")
+
+        if gpio.digital_read(ENDSTOP_CLAW)
+            self.finish_fullcycle(id)
+            return
+        end
+
+        self.phase = 24
+        self.motor_claw_state = 2
+        self.motor_claw(2, PWM_MAX)
+
+        tasmota.set_timer(FINAL_UP_MAX_MS, / -> self.finish_fullcycle(id))
+    end
+
+    def finish_fullcycle(id)
+        if !self.valid_anim(id)
+            return
+        end
+
+        print("fullcycle finished")
+
+        self.all_motors_stop()
+        self.claw_relay_off()
+        gpio.digital_write(CLAW, gpio.LOW)
+
+        self.phase = 0
+        self.in_claw_animation = false
+    end
+
     def update_claw_ramp()
         if self.phase == 4
             if gpio.digital_read(ENDSTOP_CLAW)
@@ -496,11 +739,40 @@ class ClawMachine
             )
 
             self.motor_claw(2, duty2)
+
+        elif self.phase == 12
+            if gpio.digital_read(ENDSTOP_CLAW)
+                self.finish_manual_claw(self.anim_id)
+                return
+            end
+
+            self.motor_claw(2, PWM_MAX)
+
+        elif self.phase == 20
+            if gpio.digital_read(ENDSTOP_CLAW)
+                self.motor_claw_state = 0
+                self.motor_claw(0, 0)
+                self.claw_relay_off()
+                self.fullcycle_xy_homing()
+                return
+            end
+
+            if self.motor_claw_state == 2
+                self.motor_claw(2, PWM_MAX)
+            end
+
+        elif self.phase == 24
+            if gpio.digital_read(ENDSTOP_CLAW)
+                self.finish_fullcycle(self.anim_id)
+                return
+            end
+
+            self.motor_claw(2, PWM_MAX)
         end
     end
 
     def update_homing_ramp()
-        if self.phase != 5 && self.phase != 10
+        if self.phase != 5 && self.phase != 10 && self.phase != 21
             return
         end
 
@@ -605,6 +877,10 @@ class ClawMachine
         if self.phase == 10 && self.motor_lr_state == 0 && self.motor_fb_state == 0
             self.finish_homing_only()
         end
+
+        if self.phase == 21 && self.motor_lr_state == 0 && self.motor_fb_state == 0
+            self.fullcycle_down()
+        end
     end
 end
 
@@ -614,10 +890,16 @@ tasmota.add_driver(claw_machine_driver)
 
 tasmota.add_cmd("enable", / -> claw_machine_driver.enable_game())
 tasmota.add_cmd("disable", / -> claw_machine_driver.disable_game())
+tasmota.add_cmd("clawdown", / -> claw_machine_driver.claw_down_cmd())
+tasmota.add_cmd("clawup", / -> claw_machine_driver.claw_up_cmd())
+tasmota.add_cmd("fullcycle", / -> claw_machine_driver.fullcycle_cmd())
 
 print("ClawMachine driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
-print("disable - game disabled")
+print("disable - game disabled and homing started")
+print("clawdown - claw down full speed")
+print("clawup - claw up full speed")
+print("fullcycle - homing, down, full up")
 print("--------------------------------------------------------------")
