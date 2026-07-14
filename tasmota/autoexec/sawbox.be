@@ -4,6 +4,7 @@ var SAW_PIN = 33
 var OUT1 = 0
 
 var SAW_SOUND_TOPIC = "CSAWBOX/SOUND"
+var SAW_STATUS_TOPIC = "CSAWBOX/STATUS"
 
 var SAW_GAIN = 100
 var SAW_RESTART_MS = 83000
@@ -17,6 +18,7 @@ class SawBox
     var sound_started, sound_loud, sound_start
     var last_sound_state
     var last_pin_state, last_move_time
+    var last_progress
 
     def init()
         self.counter = 0
@@ -33,6 +35,7 @@ class SawBox
 
         self.last_pin_state = gpio.digital_read(SAW_PIN)
         self.last_move_time = 0
+        self.last_progress = ""
 
         self.red_color = self.rgb(255, 0, 0)
         self.green_color = self.rgb(0, 255, 0)
@@ -46,6 +49,46 @@ class SawBox
         self.strip.show()
 
         tasmota.add_fast_loop(/ -> self.fast_loop())
+    end
+
+
+    def completed_leds()
+        var c = 1 + int(self.counter / self.count_per_led)
+        if c > self.led_count
+            c = self.led_count
+        end
+        if c < 0
+            c = 0
+        end
+        return c
+    end
+
+    def publish_progress()
+        var leds = self.completed_leds()
+        var text = str(leds) .. " / " .. str(self.led_count) .. " LED"
+        if self.finished
+            text = text .. " – kész"
+        end
+        var msg = '{"text":"' .. text .. '","leds":' .. leds .. ',"total":' .. self.led_count .. ',"finished":' .. (self.finished ? "true" : "false") .. '}'
+        if msg == self.last_progress
+            return
+        end
+        self.last_progress = msg
+        mqtt.publish(SAW_STATUS_TOPIC, msg, true)
+    end
+
+    def force_complete()
+        self.started = true
+        self.finished = true
+        self.counter = (self.led_count - 1) * self.count_per_led
+        for i: 0..(self.led_count - 1)
+            self.strip.set_pixel_color(i, self.green_color, 255)
+        end
+        self.strip.show()
+        tasmota.set_power(OUT1, false)
+        self.stop_sound()
+        self.publish_progress()
+        tasmota.resp_cmnd("SawBox force completed")
     end
 
     def publish_sound_state(state)
@@ -184,11 +227,7 @@ class SawBox
     end
 
     def draw_leds()
-        var completed_leds =
-            1 +
-            int(
-                self.counter / self.count_per_led
-            )
+        var completed_leds = self.completed_leds()
 
         if completed_leds > self.led_count
             completed_leds = self.led_count
@@ -213,6 +252,8 @@ class SawBox
     end
 
     def every_50ms()
+        self.publish_progress()
+
         if !self.started || self.finished
             return
         end
@@ -275,9 +316,15 @@ tasmota.add_cmd(
     /cmd, idx -> saw_box_driver.start_led()
 )
 
+tasmota.add_cmd(
+    "forcecomplete",
+    / -> saw_box_driver.force_complete()
+)
+
 print("SawBox driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("init - Initialize the game")
 print("startled - Turn on the first LED and start counting")
+print("forcecomplete - set 30/30 green and stop")
 print("--------------------------------------------------------------")

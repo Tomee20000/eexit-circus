@@ -38,6 +38,7 @@ var YELLOW_SOLUTION = [9,10,23]
 class KnifeGame
     var strip, color_map, color_state, rnd
     var enable, stable_cnt, last_input, triggered, sound_sent
+    var solved, last_status
 
     def init()
         self.strip = Leds(
@@ -69,6 +70,8 @@ class KnifeGame
         self.last_input = 0
         self.triggered = 0
         self.sound_sent = false
+        self.solved = false
+        self.last_status = ""
 
         self.strip.clear()
         self.strip.show()
@@ -84,12 +87,84 @@ class KnifeGame
         end
     end
 
+
+    def publish_first()
+        if self.sound_sent
+            return
+        end
+        mqtt.publish("CKNIFEGAME", '{"data":"FIRST"}')
+        mqtt.publish("cmnd/CANIMALWHEEL/i2splay", "mp3/knife.mp3")
+        self.sound_sent = true
+    end
+
+    def build_status()
+        var msg = '{"enabled":' .. (self.enable ? "true" : "false") .. ',"solved":' .. (self.solved ? "true" : "false") .. ',"first_used":' .. (self.sound_sent ? "true" : "false") .. ',"colors":['
+        for i: 0..23
+            if i > 0
+                msg = msg .. ","
+            end
+            msg = msg .. '"' .. format("%06X", self.color_state[i]) .. '"'
+        end
+        msg = msg .. "]}"
+        return msg
+    end
+
+    def publish_status()
+        var msg = self.build_status()
+        if msg == self.last_status
+            return
+        end
+        self.last_status = msg
+        mqtt.publish("CKNIFEGAME/STATUS", msg, true)
+    end
+
+    def stab(idx)
+        idx = int(idx)
+        if !self.enable || idx < 1 || idx > 9
+            tasmota.resp_cmnd("Knife game inactive or bad hole")
+            return
+        end
+        self.publish_first()
+        self.rotate(idx)
+        if self.solution_check()
+            self.game_solved()
+        end
+        self.publish_status()
+        tasmota.resp_cmnd("Virtual stab " .. idx)
+    end
+
+    def force_first()
+        self.publish_first()
+        self.publish_status()
+        tasmota.resp_cmnd("First usage forced")
+    end
+
+    def force_complete()
+        self.enable = true
+        self.publish_first()
+        for i: 0..23
+            self.set_color(i, OFF)
+        end
+        for i: 0..2
+            self.set_color(RED_SOLUTION[i], RED)
+            self.set_color(GREEN_SOLUTION[i], GREEN)
+            self.set_color(BLUE_SOLUTION[i], BLUE)
+            self.set_color(YELLOW_SOLUTION[i], YELLOW)
+        end
+        self.strip.show()
+        self.game_solved()
+        self.publish_status()
+        tasmota.resp_cmnd("Knife game force completed")
+    end
+
     def enable_game()
         self.enable = true
         self.stable_cnt = 0
         self.last_input = 0
         self.triggered = 0
         self.sound_sent = false
+        self.solved = false
+        self.publish_status()
 
         tasmota.resp_cmnd("Game enabled")
     end
@@ -256,6 +331,7 @@ class KnifeGame
 
     def game_solved()
         self.enable = false
+        self.solved = true
 
         mqtt.publish(
             "CKNIFEGAME",
@@ -269,6 +345,8 @@ class KnifeGame
     end
 
     def every_50ms()
+        self.publish_status()
+
         if !self.enable
             return
         end
@@ -312,19 +390,7 @@ class KnifeGame
 
                 self.triggered = current
 
-                if !self.sound_sent
-                    mqtt.publish(
-                        "CKNIFEGAME",
-                        '{"data":"FIRST"}'
-                    )
-
-                    mqtt.publish(
-                        "cmnd/CANIMALWHEEL/i2splay",
-                        "mp3/knife.mp3"
-                    )
-
-                    self.sound_sent = true
-                end
+                self.publish_first()
 
                 var rotate_current = current
 
@@ -385,6 +451,10 @@ tasmota.add_cmd(
         )
 )
 
+tasmota.add_cmd("stab", /cmd, i, idx -> knife_game_driver.stab(number(idx)))
+tasmota.add_cmd("forcefirst", / -> knife_game_driver.force_first())
+tasmota.add_cmd("forcecomplete", / -> knife_game_driver.force_complete())
+
 print("KnifeGame driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
@@ -393,4 +463,7 @@ print("off - led off")
 print("init - initialize the colors, no WHITE")
 print("rndinit - initialize the colors, with WHITE, random order")
 print("rotate <n> - rotates the <n> block")
+print("stab <n> - virtual physical stab")
+print("forcefirst - force only first-use event")
+print("forcecomplete - set solved colors and SOLVED event")
 print("--------------------------------------------------------------")

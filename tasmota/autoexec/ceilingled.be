@@ -1,4 +1,5 @@
 import re
+import mqtt
 
 var PWM1 = 32
 var PWM2 = 33
@@ -16,6 +17,7 @@ class CeilingLed
     var r_led, r_done, r_total
     var fill_led, fill_done, fill_started
     var rnd_end, final_led, new_led, old_led, rng
+    var animation_type, last_visual
 
     def init()
         self.n = 8
@@ -60,6 +62,8 @@ class CeilingLed
         self.new_led = 0
         self.old_led = 0
         self.rng = tasmota.millis() % 9973
+        self.animation_type = 0
+        self.last_visual = ""
     end
 
     def pwm(v)
@@ -135,6 +139,7 @@ class CeilingLed
         self.final_led = 0
         self.new_led = 0
         self.old_led = 0
+        self.animation_type = 0
     end
 
     def stop()
@@ -403,6 +408,7 @@ class CeilingLed
         self.rnd_end = tasmota.millis() + seconds * 1000
         self.pick_initial3()
         self.mode = 2
+        self.animation_type = 2
 
         tasmota.resp_cmnd("Random3 started for " .. seconds .. " sec, final led: " .. final_led)
     end
@@ -421,6 +427,7 @@ class CeilingLed
         self.r_done = 0
         self.r_led = 0
         self.mode = 1
+        self.animation_type = 1
 
         tasmota.resp_cmnd("Number of rounds set to " .. self.r_total)
     end
@@ -428,6 +435,7 @@ class CeilingLed
     def run_step()
         if self.r_done >= self.r_total
             self.mode = 0
+            self.animation_type = 0
             self.r_led = 0
             self.set_all(0)
             return
@@ -471,6 +479,7 @@ class CeilingLed
         self.fill_done = 0
         self.fill_started = 0
         self.mode = 4
+        self.animation_type = 3
 
         tasmota.resp_cmnd("Fill started from led " .. start_led)
     end
@@ -488,6 +497,7 @@ class CeilingLed
     def fill_step()
         if self.fill_done >= self.n - 1
             self.mode = 0
+            self.animation_type = 0
             self.fill_led = 0
             return
         end
@@ -526,6 +536,58 @@ class CeilingLed
         end
 
         self.mode = 0
+        self.animation_type = 0
+    end
+
+    def animation_end()
+        var kind = self.animation_type
+        var final = self.final_led
+        self.stop0()
+
+        if kind == 2 && final >= 1 && final <= self.n
+            self.set_all(0)
+            self.set_led(final, 1)
+        elif kind == 3
+            self.set_all(1)
+        else
+            self.set_all(0)
+        end
+
+        self.publish_visual()
+        tasmota.resp_cmnd("Animation completed")
+    end
+
+    def build_visual()
+        var msg = '{"mode":' .. self.mode
+        msg = msg .. ' ,"animation":' .. self.animation_type
+        msg = msg .. ' ,"dim":' .. int((self.dim * 100) / self.max_pwm)
+        msg = msg .. ' ,"lvl":['
+
+        for i: 1 .. self.n
+            if i > 1
+                msg = msg .. ","
+            end
+            msg = msg .. int((self.pwm(self.lvl[i]) * 100) / self.max_pwm)
+        end
+
+        msg = msg .. '],"act":['
+        for i: 1 .. self.n
+            if i > 1
+                msg = msg .. ","
+            end
+            msg = msg .. self.act[i]
+        end
+        msg = msg .. "]}"
+        return msg
+    end
+
+    def publish_visual()
+        var msg = self.build_visual()
+        if msg == self.last_visual
+            return
+        end
+        self.last_visual = msg
+        mqtt.publish("CCEILINGLED/VISUAL", msg, true)
     end
 
     def fade()
@@ -645,6 +707,7 @@ class CeilingLed
     def every_50ms()
         self.animate()
         self.fade()
+        self.publish_visual()
     end
 end
 
@@ -663,6 +726,7 @@ tasmota.add_cmd("random", /cmd, idx, payload -> ceiling_led_driver.random_cmd(cm
 tasmota.add_cmd("randomspeed", /cmd, i, speed -> ceiling_led_driver.set_random_speed(cmd, number(speed)))
 tasmota.add_cmd("ceilstop", /cmd -> ceiling_led_driver.stop())
 tasmota.add_cmd("ceilstatus", /cmd -> ceiling_led_driver.status(cmd))
+tasmota.add_cmd("animationend", / -> ceiling_led_driver.animation_end())
 
 ceiling_led_driver.all_off()
 
@@ -680,4 +744,5 @@ print("random <seconds> <final_led> - random 3 LED animation, final_led remains 
 print("randomspeed <speed> - speed of random3")
 print("ceilstop - stop current animation")
 print("ceilstatus - show current state")
+print("animationend - finish current animation normally")
 print("--------------------------------------------------------------")

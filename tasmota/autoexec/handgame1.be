@@ -199,6 +199,13 @@ class Handgame1
         tasmota.resp_cmnd("Game enabled")
     end
 
+
+    def force_complete()
+        self.enable = true
+        self.solved()
+        tasmota.resp_cmnd("Handgame force completed")
+    end
+
     def disable_game()
         self.enable = false
         self.selected_color = nil
@@ -227,9 +234,15 @@ tasmota.add_cmd(
     / -> handgame_driver.disable_game()
 )
 
+tasmota.add_cmd(
+    "forcecomplete",
+    / -> handgame_driver.force_complete()
+)
+
 print("Handgame1 driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
 print("disable - game disabled")
+print("forcecomplete - normal solved blink and SOLVED event")
 print("--------------------------------------------------------------")

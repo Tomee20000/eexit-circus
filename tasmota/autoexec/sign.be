@@ -284,6 +284,21 @@ class Sign
         tasmota.set_timer(SENSOR_HOLD_MS, / -> self.finalize_input(id, token))
     end
 
+
+    def force_complete()
+        self.anim_id = self.anim_id + 1
+        self.enabled = false
+        self.solved = true
+        self.animating = false
+        self.phase = 0
+        self.clear_input_state()
+        tasmota.remove_timer("sign_intro")
+        tasmota.remove_timer("sign_glitch")
+        self.letters_on()
+        mqtt.publish(self.mqtt_topic, '{"data":"SOLVED"}')
+        tasmota.resp_cmnd("Sign force completed")
+    end
+
     def any_key(cmd, idx)
         var id = number(idx & 0xff)
 
@@ -303,10 +318,12 @@ var sign_driver = Sign()
 tasmota.add_driver(sign_driver)
 tasmota.add_cmd("enable", / cmd, idx, payload, payload_json -> sign_driver.cmd_enable(cmd, idx, payload, payload_json))
 tasmota.add_cmd("disable", / cmd, idx, payload, payload_json -> sign_driver.cmd_disable(cmd, idx, payload, payload_json))
+tasmota.add_cmd("forcecomplete", / -> sign_driver.force_complete())
 
 print("Sign driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
 print("disable - game disabled")
+print("forcecomplete - all letters on and SOLVED event")
 print("--------------------------------------------------------------")

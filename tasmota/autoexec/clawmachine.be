@@ -42,7 +42,7 @@ var HOMING_MAX_PWM = 870
 var HOMING_RAMP_MS = 400
 
 var DROP_OPEN_MS = 1000
-var FINAL_UP_MAX_MS = 7500
+var FINAL_UP_MAX_MS = 9000
 var RELAY_DELAY_MS = 100
 
 var CLAW_RELAY_ON = gpio.HIGH
@@ -63,6 +63,7 @@ class ClawMachine
     var in_claw_animation, is_coin_inserted
     var phase, anim_id
     var claw_ramp_start, homing_ramp_start
+    var last_status
 
     def pwm_pair(pin1, pin2, v1, v2)
         if v1 < 0
@@ -155,6 +156,61 @@ class ClawMachine
         return true
     end
 
+
+    def status_text()
+        if self.phase == 1
+            return "Karom ciklus indul"
+        elif self.phase == 2
+            return "Karom leengedése"
+        elif self.phase == 3
+            return "Megfogás"
+        elif self.phase == 4
+            return "Karom felhúzása"
+        elif self.phase == 5
+            return "XY home keresése"
+        elif self.phase == 6
+            return "Labda elengedése"
+        elif self.phase == 7 || self.phase == 8
+            return "Karom végső felhúzása"
+        elif self.phase == 9 || self.phase == 10
+            return "Letiltás és homing"
+        elif self.phase == 11
+            return "Kézi leengedés"
+        elif self.phase == 12
+            return "Kézi felhúzás"
+        elif self.phase == 20
+            return "Full cycle: karom home"
+        elif self.phase == 21
+            return "Full cycle: XY home"
+        elif self.phase == 22
+            return "Full cycle: leengedés"
+        elif self.phase == 23
+            return "Full cycle: várakozás"
+        elif self.phase == 24
+            return "Full cycle: felhúzás"
+        end
+
+        if self.motor_lr_state != 0 || self.motor_fb_state != 0
+            return "Játékos mozgatja"
+        end
+
+        if self.is_coin_inserted
+            return "Játékra kész"
+        end
+
+        return "Letiltva"
+    end
+
+    def publish_status()
+        var text = self.status_text()
+        var msg = '{"text":"' .. text .. '","phase":' .. self.phase .. ',"enabled":' .. (self.is_coin_inserted ? "true" : "false") .. '}'
+        if msg == self.last_status
+            return
+        end
+        self.last_status = msg
+        mqtt.publish("CCLAWMACHINE/STATUS", msg, true)
+    end
+
     def all_motors_stop()
         self.motor_lr(0, 0)
         self.motor_fb(0, 0)
@@ -188,6 +244,7 @@ class ClawMachine
         self.anim_id = 0
         self.claw_ramp_start = 0
         self.homing_ramp_start = 0
+        self.last_status = ""
 
         self.all_motors_stop()
         self.claw_relay_off()
@@ -881,6 +938,8 @@ class ClawMachine
         if self.phase == 21 && self.motor_lr_state == 0 && self.motor_fb_state == 0
             self.fullcycle_down()
         end
+
+        self.publish_status()
     end
 end
 

@@ -11,6 +11,9 @@ var BLINK_MS = 250
 var DEMO_BLINKS = 15
 var WIN_BLINKS = 3
 
+# Kódbeli bohóc -> fizikai gomb helye balról. Ha a fal sorrendje más, csak ezt az öt számot írd át.
+var WALL_POSITION = [1, 2, 3, 4, 5]
+
 # ---------------- GPIO ----------------
 
 var NOSE1 = 25
@@ -38,6 +41,7 @@ class Clowngame
     var buttons, noses, eyes
     var last_buttons, last_noses, last_eye_states
     var solving_started
+    var last_status
 
     def init()
         self.enable = false
@@ -46,6 +50,7 @@ class Clowngame
         self.blink_id = 0
         self.active_clown = nil
         self.solving_started = false
+        self.last_status = ""
 
         self.buttons = [BUTTON1, BUTTON2, BUTTON3, BUTTON4, BUTTON5]
         self.noses = [NOSE1, NOSE2, NOSE3, NOSE4, NOSE5]
@@ -56,6 +61,52 @@ class Clowngame
         self.last_eye_states = ["", "", "", "", ""]
 
         self.all_off()
+    end
+
+
+    def wall_position(clown_idx)
+        return WALL_POSITION[clown_idx]
+    end
+
+    def publish_status()
+        var text = ""
+        var waiting = "none"
+        var next_clown = 0
+        var wall_button = 0
+
+        if !self.enable
+            text = "Letiltva"
+        elif self.state == "win"
+            text = "5/5 kész – Bohócjáték megoldva"
+        elif self.state == "blinking" && self.active_clown != nil
+            next_clown = self.active_clown + 1
+            wall_button = self.wall_position(self.active_clown)
+            waiting = "nose"
+            text = str(self.step) .. "/5 kész – " .. str(next_clown) .. ". bohóc villog, nyomd meg az orrát"
+        elif self.state == "demo" && self.active_clown != nil
+            next_clown = self.active_clown + 1
+            wall_button = self.wall_position(self.active_clown)
+            waiting = "demo"
+            text = "Bemutató: " .. str(next_clown) .. ". bohóc – " .. str(wall_button) .. ". gomb balról"
+        else
+            next_clown = self.expected() + 1
+            wall_button = self.wall_position(self.expected())
+            waiting = "button"
+            text = str(self.step) .. "/5 kész – Következő: " .. str(next_clown) .. ". bohóc – " .. str(wall_button) .. ". gomb balról"
+        end
+
+        var msg = '{"text":"' .. text .. '","enabled":' .. (self.enable ? "true" : "false") .. ',"state":"' .. self.state .. '","completed":' .. self.step .. ',"total":5,"next_clown":' .. next_clown .. ',"wall_button":' .. wall_button .. ',"waiting_for":"' .. waiting .. '"}'
+        if msg == self.last_status
+            return
+        end
+        self.last_status = msg
+        mqtt.publish("CCLOWNGAME/STATUS", msg, true)
+    end
+
+    def force_complete()
+        self.enable = true
+        self.win()
+        tasmota.resp_cmnd("Clowngame force completed")
     end
 
     def publish_eye_state(i, state)
@@ -83,6 +134,8 @@ class Clowngame
     end
 
     def every_50ms()
+        self.publish_status()
+
         if !self.enable
             return nil
         end
@@ -153,7 +206,6 @@ class Clowngame
 
     def button_pressed(i)
         if self.state == "win"
-            self.reset_game()
             return nil
         end
 
@@ -200,6 +252,10 @@ class Clowngame
     end
 
     def nose_pressed(i)
+        if self.state == "win"
+            return nil
+        end
+
         if self.state == "blinking" &&
            i == self.active_clown &&
            i == self.expected()
@@ -355,8 +411,12 @@ class Clowngame
         end
 
         if n >= WIN_BLINKS * 2
-            self.state = "idle"
-            self.all_off()
+            self.state = "win"
+
+            for i: 0..4
+                self.eye_on(i)
+            end
+
             self.read_inputs()
             return nil
         end
@@ -437,9 +497,15 @@ tasmota.add_cmd(
     / -> clowngamedriver.disable_game()
 )
 
+tasmota.add_cmd(
+    "forcecomplete",
+    / -> clowngamedriver.force_complete()
+)
+
 print("Clowngame driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
 print("disable - game disabled")
+print("forcecomplete - normal win animation and SOLVED event")
 print("--------------------------------------------------------------")

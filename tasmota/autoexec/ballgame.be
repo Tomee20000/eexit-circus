@@ -49,6 +49,30 @@ class BallGame
     var blink_step
     var blink_last_time
     var blink_max_step
+    var last_status
+
+
+    def build_status()
+        var indicator = "off"
+        if self.blink_active
+            if self.blink_power == RED_LED
+                indicator = "red"
+            else
+                indicator = "green"
+            end
+        end
+        var switch_on = self.switch_state == 0
+        return '{"tube":"' .. self.topic .. '","ball":"' .. self.current_ball .. '","present":' .. (self.card_present ? "true" : "false") .. ',"switch":' .. (switch_on ? "true" : "false") .. ',"indicator":"' .. indicator .. '","blink_active":' .. (self.blink_active ? "true" : "false") .. ',"blink_step":' .. self.blink_step .. ',"blink_total":' .. self.blink_max_step .. '}'
+    end
+
+    def publish_status()
+        var msg = self.build_status()
+        if msg == self.last_status
+            return
+        end
+        self.last_status = msg
+        mqtt.publish(self.topic .. "/STATUS", msg, true)
+    end
 
     def find_ball(uid)
         var out = "NOT FOUND"
@@ -87,6 +111,7 @@ class BallGame
         end
 
         self.current_ball = "-"
+        self.last_status = ""
         self.card_present = false
         self.timeout_sent = true
     end
@@ -349,6 +374,7 @@ class BallGame
         self.handle_pn532()
         self.check_card_timeout()
         self.handle_blink()
+        self.publish_status()
     end
 
     def init()

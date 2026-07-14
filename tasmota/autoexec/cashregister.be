@@ -306,6 +306,18 @@ class CashRegister
         tasmota.resp_cmnd("Cash register enabled")
     end
 
+
+    def force_complete()
+        self.enabled = true
+        if !self.solved
+            self.correct_code()
+        end
+        self.enabled = false
+        self.held_key = nil
+        self.all_rows_off()
+        tasmota.resp_cmnd("Cash register force completed")
+    end
+
     def disable_game()
         self.enabled = false
         self.held_key = nil
@@ -340,6 +352,7 @@ end
 tasmota.add_cmd("CashReset", cash_reset_cmd)
 tasmota.add_cmd("enable", cash_enable_cmd)
 tasmota.add_cmd("disable", cash_disable_cmd)
+tasmota.add_cmd("forcecomplete", / -> cash_register_driver.force_complete())
 
 print("CashRegister driver loaded")
 print("--------------------------------------------------------------")
@@ -347,4 +360,5 @@ print("Commands:")
 print("CashReset - reset")
 print("enable - keyboard and screen enabled")
 print("disable - keyboard and screen disabled")
+print("forcecomplete - normal solved end state")
 print("--------------------------------------------------------------")

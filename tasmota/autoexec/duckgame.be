@@ -427,6 +427,7 @@ class WaveDriver
     var ldr_latched, ldr_off_since, ldr_lock_until
     var ldr_debug
     var solved
+    var last_status
 
     def init()
         self.time = 0
@@ -435,6 +436,7 @@ class WaveDriver
         self.next_anim_ms = 0
         self.next_blink_ms = 0
         self.solved = false
+        self.last_status = ""
 
         self.duck_anim = [
             false,
@@ -498,6 +500,56 @@ class WaveDriver
         )
     end
 
+
+    def duck_state(i)
+        if self.duck_anim[i]
+            return "shot_animation"
+        elif self.duck_red[i]
+            return "shot"
+        elif duck_move_watchdog != nil && duck_move_watchdog.wanted[i]
+            return "moving"
+        end
+        return "stopped"
+    end
+
+    def publish_status()
+        var count = 0
+        for i: 0..3
+            if self.duck_red[i]
+                count = count + 1
+            end
+        end
+        var msg = '{"text":"' .. str(count) .. ' / 4 kacsa lelőve","shot_count":' .. count .. ',"total":4,"enabled":' .. (self.enabled ? "true" : "false") .. ',"ducks":['
+        for i: 0..3
+            if i > 0
+                msg = msg .. ","
+            end
+            msg = msg .. '"' .. self.duck_state(i) .. '"'
+        end
+        msg = msg .. "]}"
+        if msg == self.last_status
+            return
+        end
+        self.last_status = msg
+        mqtt.publish("CDUCKGAME/STATUS", msg, true)
+    end
+
+    def force_complete()
+        if duck_move_watchdog != nil
+            duck_move_watchdog.stop_all()
+        end
+        serial_port.write(bytes().fromstring("stopall\n"))
+        self.enabled = true
+        for i: 0..3
+            self.duck_anim[i] = false
+            self.duck_red[i] = true
+        end
+        self.solved = false
+        self.publish_status()
+        self.check_solved()
+        tasmota.resp_cmnd("Duck game force completed")
+    end
+
     def duck_is_down(idx)
         if idx < 1 || idx > 4
             return true
@@ -552,6 +604,8 @@ class WaveDriver
     end
 
     def anim_loop()
+        self.publish_status()
+
         if !self.enabled
             return
         end
@@ -950,7 +1004,10 @@ tasmota.add_cmd(
 # =========================================================
 # HELP / INFO
 # =========================================================
+tasmota.add_cmd("forcecomplete", / -> wave_driver.force_complete())
+
 print("DuckGame driver loaded")
+print("forcecomplete - mark all ducks shot and publish SOLVED")
 print("--------------------------------------------------------------")
 print("Command example: home1 - duck1 start homing")
 print("home<n> - start homing for the selected duck")
