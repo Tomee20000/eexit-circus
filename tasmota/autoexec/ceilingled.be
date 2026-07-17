@@ -159,6 +159,28 @@ class CeilingLed
         tasmota.resp_cmnd("All led off")
     end
 
+    def disable_reset()
+        self.stop0()
+
+        self.dim = self.max_pwm
+        self.dim_t = self.max_pwm
+        self.fade_step = 256
+        self.dim_step = 64
+        self.run_spd = 1
+        self.rnd_spd = 10
+
+        for i: 1 .. self.n
+            self.lvl[i] = 0
+            self.tgt[i] = 0
+            self.act[i] = 0
+            gpio.set_pwm(self.pin[i], 0)
+        end
+
+        self.last_visual = ""
+        self.publish_visual()
+        tasmota.resp_cmnd("Ceiling LEDs disabled and reset")
+    end
+
     def manual(cmd, led, on)
         led = int(led)
         on = int(on)
@@ -721,6 +743,7 @@ tasmota.add_cmd("fillled", /cmd, i, start_led -> ceiling_led_driver.fill_start(c
 tasmota.add_cmd("runningspeed", /cmd, i, speed -> ceiling_led_driver.set_run_speed(cmd, i, number(speed)))
 tasmota.add_cmd("allon", / -> ceiling_led_driver.all_on())
 tasmota.add_cmd("alloff", / -> ceiling_led_driver.all_off())
+tasmota.add_cmd("disable", / -> ceiling_led_driver.disable_reset())
 tasmota.add_cmd("ceildim", /cmd, i, percent -> ceiling_led_driver.set_dim(cmd, number(percent)))
 tasmota.add_cmd("random", /cmd, idx, payload -> ceiling_led_driver.random_cmd(cmd, idx, payload))
 tasmota.add_cmd("randomspeed", /cmd, i, speed -> ceiling_led_driver.set_random_speed(cmd, number(speed)))
@@ -739,6 +762,7 @@ print("fillled <start_led> - order: start, start-1 ... 1, 8 ...")
 print("runningspeed <speed> - speed of runningled and fillled")
 print("allon - turn on all LEDs")
 print("alloff - turn off all LEDs")
+print("disable - immediate all-off and reset all animation settings")
 print("ceildim <0..100> - global dimmer")
 print("random <seconds> <final_led> - random 3 LED animation, final_led remains on")
 print("randomspeed <speed> - speed of random3")

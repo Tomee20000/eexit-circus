@@ -1,12 +1,3 @@
-#-
-#FFFFFF   fehér
-#0D00FF   kék
-#FF5F15   sárga
-#FF0000   piros
-#004D1A   sötétzöld
-#B10061   lila / magenta
--#
-
 import mqtt
 
 var INPUT1 = 26
@@ -42,6 +33,7 @@ class Elephant
     var selector_inited
     var enable
     var demo_index
+    var last_status
 
     def set_light(power, color)
         light.set({
@@ -76,8 +68,31 @@ class Elephant
         self.selector_inited = false
         self.enable = false
         self.demo_index = 0
+        self.last_status = ""
 
         self.set_light(false, "FFFFFF")
+        mqtt.publish(ELEPHANT_TOPIC, "000000", true)
+        self.publish_status()
+    end
+
+    def build_status()
+        var color = "000000"
+        if self.current_color != nil
+            color = COLOR_MAP[self.current_color]
+        end
+
+        return '{"enabled":' .. (self.enable ? "true" : "false") .. ',"color":"' .. color .. '","demo_index":' .. self.demo_index .. '}'
+    end
+
+    def publish_status()
+        var msg = self.build_status()
+
+        if msg == self.last_status
+            return
+        end
+
+        self.last_status = msg
+        mqtt.publish("CELEPHANT/STATUS", msg, true)
     end
 
     def enable_game()
@@ -88,8 +103,11 @@ class Elephant
         self.demo_index = 0
 
         self.set_light(false, "FFFFFF")
+        mqtt.publish(ELEPHANT_TOPIC, "000000", true)
+        self.last_status = ""
+        self.publish_status()
 
-        tasmota.resp_cmnd("Game enabled")
+        tasmota.resp_cmnd("Game enabled and reset")
     end
 
     def disable_game()
@@ -103,10 +121,13 @@ class Elephant
 
         mqtt.publish(
             ELEPHANT_TOPIC,
-            "000000"
+            "000000",
+            true
         )
 
-        tasmota.resp_cmnd("Game disabled")
+        self.last_status = ""
+        self.publish_status()
+        tasmota.resp_cmnd("Game disabled and reset")
     end
 
     def publish_color()
@@ -116,11 +137,16 @@ class Elephant
 
         mqtt.publish(
             ELEPHANT_TOPIC,
-            COLOR_MAP[self.current_color]
+            COLOR_MAP[self.current_color],
+            true
         )
+
+        self.publish_status()
     end
 
     def every_second()
+        self.publish_status()
+
         if !self.enable
             return
         end
@@ -190,5 +216,5 @@ print("Elephant driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
-print("disable - game disabled")
+print("disable - clear selection, lamp OFF and retained MQTT reset")
 print("--------------------------------------------------------------")

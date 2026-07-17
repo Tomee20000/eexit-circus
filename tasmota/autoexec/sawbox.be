@@ -51,8 +51,11 @@ class SawBox
         tasmota.add_fast_loop(/ -> self.fast_loop())
     end
 
-
     def completed_leds()
+        if !self.started && !self.finished
+            return 0
+        end
+
         var c = 1 + int(self.counter / self.count_per_led)
         if c > self.led_count
             c = self.led_count
@@ -67,9 +70,17 @@ class SawBox
         var leds = self.completed_leds()
         var text = str(leds) .. " / " .. str(self.led_count) .. " LED"
         if self.finished
-            text = text .. " – kész"
+            text = text .. " - kész"
         end
-        var msg = '{"text":"' .. text .. '","leds":' .. leds .. ',"total":' .. self.led_count .. ',"finished":' .. (self.finished ? "true" : "false") .. '}'
+        if !self.started && !self.finished
+            text = "Inaktív - " .. text
+        end
+
+        var msg = '{"text":"' .. text ..
+                  '","leds":' .. leds ..
+                  ',"total":' .. self.led_count ..
+                  ',"started":' .. (self.started ? "true" : "false") ..
+                  ',"finished":' .. (self.finished ? "true" : "false") .. '}'
         if msg == self.last_progress
             return
         end
@@ -104,7 +115,7 @@ class SawBox
         )
     end
 
-    def init_game()
+    def reset_game(response_text)
         self.counter = 0
         self.saw_in = false
         self.started = false
@@ -126,7 +137,18 @@ class SawBox
         self.strip.clear()
         self.strip.show()
 
-        tasmota.resp_cmnd("Initialized")
+        self.last_progress = ""
+        self.publish_progress()
+
+        tasmota.resp_cmnd(response_text)
+    end
+
+    def init_game()
+        self.reset_game("Initialized")
+    end
+
+    def disable_game()
+        self.reset_game("SawBox disabled and fully reset")
     end
 
     def start_led()
@@ -153,7 +175,12 @@ class SawBox
 
         self.publish_sound_state("STOP")
 
+        self.strip.clear()
+        self.strip.show()
         self.draw_leds()
+
+        self.last_progress = ""
+        self.publish_progress()
 
         tasmota.resp_cmnd("First LED turned on")
     end
@@ -294,6 +321,7 @@ class SawBox
 
             tasmota.set_power(OUT1, false)
             self.stop_sound()
+            self.publish_progress()
 
             print(
                 "SawBox finished, OUT1 turned off"
@@ -317,6 +345,11 @@ tasmota.add_cmd(
 )
 
 tasmota.add_cmd(
+    "disable",
+    / -> saw_box_driver.disable_game()
+)
+
+tasmota.add_cmd(
     "forcecomplete",
     / -> saw_box_driver.force_complete()
 )
@@ -326,5 +359,6 @@ print("--------------------------------------------------------------")
 print("Commands:")
 print("init - Initialize the game")
 print("startled - Turn on the first LED and start counting")
+print("disable - stop sound, clear leds and reset progress")
 print("forcecomplete - set 30/30 green and stop")
 print("--------------------------------------------------------------")

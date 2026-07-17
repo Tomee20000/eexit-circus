@@ -79,6 +79,7 @@ class AnimalWheel
     var sound_playing
     var sound_wheel
     var sound_position
+    var last_status
 
     def init()
         tasmota.cmd("I2SGain 70")
@@ -96,6 +97,7 @@ class AnimalWheel
         self.sound_playing = false
         self.sound_wheel = -1
         self.sound_position = 0
+        self.last_status = ""
     end
 
     def valid_animal_position(position)
@@ -111,15 +113,15 @@ class AnimalWheel
     end
 
     def stop_sound()
+        tasmota.cmd("I2SStop")
+
         if self.sound_playing
-            tasmota.cmd("I2SStop")
-
-            self.sound_playing = false
-            self.sound_wheel = -1
-            self.sound_position = 0
-
             print("Sound stopped")
         end
+
+        self.sound_playing = false
+        self.sound_wheel = -1
+        self.sound_position = 0
     end
 
     def play_sound(wheel, position)
@@ -171,15 +173,61 @@ class AnimalWheel
         end
     end
 
+    def build_status()
+        var msg = '{"enabled":' .. (self.enabled ? "true" : "false")
+        msg = msg .. ',"sound_playing":' .. (self.sound_playing ? "true" : "false")
+        msg = msg .. ',"sound_wheel":' .. (self.sound_wheel >= 0 ? self.sound_wheel + 1 : 0)
+        msg = msg .. ',"sound_position":' .. self.sound_position
+        msg = msg .. ',"animals":['
+
+        for i: 0..4
+            if i > 0
+                msg = msg .. ","
+            end
+
+            msg = msg .. '"' .. self.animal_name(i, self.positions[i]) .. '"'
+        end
+
+        msg = msg .. "]}"
+        return msg
+    end
+
+    def publish_status()
+        var msg = self.build_status()
+
+        if msg == self.last_status
+            return
+        end
+
+        self.last_status = msg
+        mqtt.publish("CANIMALWHEEL/STATUS", msg, true)
+    end
+
+    def reset_pending()
+        for i: 0..4
+            self.pending_positions[i] = self.positions[i]
+            self.pending_since[i] = 0
+        end
+    end
+
     def enable()
+        self.stop_sound()
         self.enabled = true
-        tasmota.resp_cmnd("AnimalWheel enabled")
+        self.reset_pending()
+        self.last_status = ""
+        self.publish_all()
+        self.publish_status()
+        tasmota.resp_cmnd("AnimalWheel enabled and reset")
     end
 
     def disable()
         self.enabled = false
         self.stop_sound()
-        tasmota.resp_cmnd("AnimalWheel disabled")
+        self.reset_pending()
+        self.last_status = ""
+        self.publish_all()
+        self.publish_status()
+        tasmota.resp_cmnd("AnimalWheel disabled and reset")
     end
 
     def get_position(analog_name)
@@ -325,16 +373,21 @@ class AnimalWheel
         if !self.initialized
             self.read_initial_positions()
             self.initialized = true
+            self.last_status = ""
+            self.publish_status()
             return
         end
 
         self.read_analog()
+        self.publish_status()
 
         if !self.startup_published &&
            mqtt.connected()
 
             self.startup_published = true
             self.publish_all()
+            self.last_status = ""
+            self.publish_status()
         end
     end
 end

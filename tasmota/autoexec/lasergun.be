@@ -2,9 +2,6 @@ import gpio
 import mqtt
 import json
 
-# =========================================================
-# CONFIG
-# =========================================================
 var LED0 = 3
 var LED_COUNT = 6
 
@@ -27,15 +24,12 @@ var SAW_SOUND_TOPIC = "CSAWBOX/SOUND"
 var CRY_GAIN = 50
 var CRY_RESTART_MS = 29000
 
-
-# =========================================================
-# LASERGUN DRIVER
-# =========================================================
 class LaserGun
 
     var enable, charge, last_msg, trigger_lock, decay, infinite
     var shot_phase, phase_start, led_update
     var cry_started, cry_loud, cry_start
+    var last_status
 
     def leds()
         if self.infinite
@@ -146,8 +140,68 @@ class LaserGun
         tasmota.cmd("i2sgain 0")
     end
 
+    def build_status()
+        var text = "Inaktív"
+        if self.enable
+            if self.infinite
+                text = "Aktív - végtelen lövés"
+            elif self.shot_phase != 0
+                text = "Aktív - lövés"
+            else
+                text = "Aktív - töltés: " .. str(self.charge) .. " / " .. str(MAX_CHARGE)
+            end
+        end
+
+        return '{"enabled":' .. (self.enable ? "true" : "false") ..
+               ',"charge":' .. self.charge ..
+               ',"max_charge":' .. MAX_CHARGE ..
+               ',"infinite":' .. (self.infinite ? "true" : "false") ..
+               ',"decay":' .. (self.decay ? "true" : "false") ..
+               ',"shot_phase":' .. self.shot_phase ..
+               ',"cry_loud":' .. (self.cry_loud ? "true" : "false") ..
+               ',"text":"' .. text .. '"}'
+    end
+
+    def publish_status()
+        var msg = self.build_status()
+        if msg == self.last_status
+            return
+        end
+
+        self.last_status = msg
+        mqtt.publish("CLASERGUN/STATUS", msg, true)
+    end
+
+    def reset_game(enabled_state)
+        self.enable = enabled_state
+        self.charge = 0
+        self.last_msg = tasmota.millis()
+        self.trigger_lock = false
+        self.decay = true
+        self.infinite = false
+        self.shot_phase = 0
+        self.phase_start = 0
+        self.led_update = false
+
+        self.motor_off()
+        self.cry_stop()
+
+        if self.enable
+            self.leds()
+        else
+            self.leds_off()
+        end
+
+        self.last_status = ""
+        self.publish_status()
+    end
+
     def on_mqtt_message(topic, payload)
         if topic == "CLASERGUN/BCOUNTER"
+            if !self.enable
+                return
+            end
+
             self.last_msg = tasmota.millis()
 
             if !self.infinite
@@ -170,13 +224,15 @@ class LaserGun
         if topic == SAW_SOUND_TOPIC
             var data = json.load(payload).find("data", nil)
 
-            if data == "LOUD"
-                self.cry_on()
-            elif data == "QUIET"
-                self.cry_quiet()
-            elif data == "STOP"
+            if data == "STOP"
                 self.cry_stop()
+            elif self.enable && data == "LOUD"
+                self.cry_on()
+            elif self.enable && data == "QUIET"
+                self.cry_quiet()
             end
+
+            self.publish_status()
 
             return
         end
@@ -195,7 +251,7 @@ class LaserGun
 
         tasmota.add_fast_loop(/ -> self.fast_loop())
 
-        self.enable = true
+        self.enable = false
         self.charge = 0
         self.last_msg = tasmota.millis()
         self.trigger_lock = false
@@ -208,51 +264,31 @@ class LaserGun
         self.cry_started = false
         self.cry_loud = false
         self.cry_start = 0
+        self.last_status = ""
 
-        self.motor_off()
-        self.leds()
-
-        tasmota.cmd("i2sgain 0")
+        self.reset_game(true)
     end
 
     def enable_game()
-        self.enable = true
-        self.last_msg = tasmota.millis()
-        self.trigger_lock = false
-        self.shot_phase = 0
-        self.phase_start = 0
-        self.led_update = false
-        self.motor_off()
-
-        if self.infinite
-            self.leds_all_on()
-        else
-            self.leds()
-        end
-
-        tasmota.resp_cmnd("Game enabled")
+        self.reset_game(true)
+        tasmota.resp_cmnd("Game enabled from clean state")
     end
 
     def disable_game()
-        self.enable = false
-        self.trigger_lock = false
-        self.shot_phase = 0
-        self.phase_start = 0
-        self.led_update = false
-        self.motor_off()
-        self.leds_off()
-
-        tasmota.resp_cmnd("Game disabled")
+        self.reset_game(false)
+        tasmota.resp_cmnd("Game disabled and fully reset")
     end
 
     def decay_on()
         self.decay = true
         self.last_msg = tasmota.millis()
+        self.publish_status()
         tasmota.resp_cmnd("Auto decay enabled")
     end
 
     def decay_off()
         self.decay = false
+        self.publish_status()
         tasmota.resp_cmnd("Auto decay disabled")
     end
 
@@ -260,6 +296,7 @@ class LaserGun
         self.infinite = true
         self.led_update = false
         self.leds_all_on()
+        self.publish_status()
         tasmota.resp_cmnd("Infinite shots enabled")
     end
 
@@ -267,11 +304,13 @@ class LaserGun
         self.infinite = false
         self.led_update = false
         self.leds()
+        self.publish_status()
         tasmota.resp_cmnd("Infinite shots disabled")
     end
 
     def every_50ms()
         var now = tasmota.millis()
+        self.publish_status()
 
         if self.cry_loud &&
            self.cry_started &&
@@ -346,17 +385,9 @@ class LaserGun
     end
 end
 
-
-# =========================================================
-# INIT
-# =========================================================
 var laser_gun_driver = LaserGun()
 tasmota.add_driver(laser_gun_driver)
 
-
-# =========================================================
-# COMMANDS
-# =========================================================
 tasmota.add_cmd("enable", / -> laser_gun_driver.enable_game())
 tasmota.add_cmd("disable", / -> laser_gun_driver.disable_game())
 
@@ -366,15 +397,11 @@ tasmota.add_cmd("decayoff", / -> laser_gun_driver.decay_off())
 tasmota.add_cmd("infiniteon", / -> laser_gun_driver.infinite_on())
 tasmota.add_cmd("infiniteoff", / -> laser_gun_driver.infinite_off())
 
-
-# =========================================================
-# HELP / INFO
-# =========================================================
 print("LaserGun driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
-print("enable - game enabled")
-print("disable - game disabled")
+print("enable - game enabled from clean state")
+print("disable - game disabled and fully reset")
 print("decayon - automatic led decrease enabled")
 print("decayoff - automatic led decrease disabled")
 print("infiniteon - infinite shots enabled")

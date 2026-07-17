@@ -33,6 +33,7 @@ class Sign
     var glitch_masks
     var input_pending, input_token, input_last
     var mqtt_topic
+    var last_status
 
     def init()
         self.enabled = false
@@ -53,8 +54,10 @@ class Sign
         self.input_last = [0, 0, 0, 0, 0, 0, 0]
 
         self.mqtt_topic = "CSIGN"
+        self.last_status = ""
 
         self.all_off()
+        self.publish_status()
     end
 
     def all_off()
@@ -105,6 +108,50 @@ class Sign
         end
     end
 
+    def build_status()
+        var p = tasmota.get_power()
+        var mask = 0
+
+        for i: 0..5
+            if p[i]
+                mask = mask | (1 << i)
+            end
+        end
+
+        var text = "Inaktív"
+        if self.solved
+            text = "Megoldva"
+        elif self.enabled
+            if self.phase == 1
+                text = "Aktív - bevezető animáció"
+            elif self.phase == 2
+                text = "Aktív - villogás"
+            elif self.phase == 3
+                text = "Aktív - feladvány"
+            else
+                text = "Aktív"
+            end
+        end
+
+        return '{"enabled":' .. (self.enabled ? "true" : "false") ..
+               ',"solved":' .. (self.solved ? "true" : "false") ..
+               ',"animating":' .. (self.animating ? "true" : "false") ..
+               ',"phase":' .. self.phase ..
+               ',"letters_mask":' .. mask ..
+               ',"greenred":' .. (p[LED_GREENRED] ? "true" : "false") ..
+               ',"text":"' .. text .. '"}'
+    end
+
+    def publish_status()
+        var msg = self.build_status()
+        if msg == self.last_status
+            return
+        end
+
+        self.last_status = msg
+        mqtt.publish("CSIGN/STATUS", msg, true)
+    end
+
     def cmd_enable(cmd, idx, payload, payload_json)
         self.anim_id = self.anim_id + 1
         var id = self.anim_id
@@ -124,6 +171,8 @@ class Sign
 
         tasmota.set_timer(INTRO_MS, / -> self.start_glitch(id), "sign_intro")
 
+        self.last_status = ""
+        self.publish_status()
         tasmota.resp_cmnd_done()
     end
 
@@ -141,6 +190,8 @@ class Sign
         tasmota.remove_timer("sign_intro")
         tasmota.remove_timer("sign_glitch")
 
+        self.last_status = ""
+        self.publish_status()
         tasmota.resp_cmnd_done()
     end
 
@@ -154,6 +205,7 @@ class Sign
         self.clear_input_state()
 
         tasmota.remove_timer("sign_intro")
+        self.publish_status()
         self.glitch_step(id)
     end
 
@@ -185,7 +237,8 @@ class Sign
         self.play_state()
 
         mqtt.publish(self.mqtt_topic, '{"data":"LAMPOFF"}')
-    end 
+        self.publish_status()
+    end
 
     def check_solved()
         if self.solved
@@ -205,6 +258,7 @@ class Sign
             tasmota.remove_timer("sign_glitch")
 
             mqtt.publish(self.mqtt_topic, '{"data":"SOLVED"}')
+            self.publish_status()
         end
     end
 
@@ -232,6 +286,7 @@ class Sign
 
         self.input_last[id] = tasmota.millis()
         self.check_solved()
+        self.publish_status()
     end
 
     def finalize_input(id, token)
@@ -284,7 +339,6 @@ class Sign
         tasmota.set_timer(SENSOR_HOLD_MS, / -> self.finalize_input(id, token))
     end
 
-
     def force_complete()
         self.anim_id = self.anim_id + 1
         self.enabled = false
@@ -296,7 +350,13 @@ class Sign
         tasmota.remove_timer("sign_glitch")
         self.letters_on()
         mqtt.publish(self.mqtt_topic, '{"data":"SOLVED"}')
+        self.last_status = ""
+        self.publish_status()
         tasmota.resp_cmnd("Sign force completed")
+    end
+
+    def every_50ms()
+        self.publish_status()
     end
 
     def any_key(cmd, idx)
@@ -305,6 +365,7 @@ class Sign
         if id == 7
             if self.solved
                 self.toggle_led(LED_GREENRED)
+                self.publish_status()
             end
             return nil
         end
@@ -323,7 +384,7 @@ tasmota.add_cmd("forcecomplete", / -> sign_driver.force_complete())
 print("Sign driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
-print("enable - game enabled")
-print("disable - game disabled")
+print("enable - game enabled from clean state")
+print("disable - game disabled and fully reset")
 print("forcecomplete - all letters on and SOLVED event")
 print("--------------------------------------------------------------")

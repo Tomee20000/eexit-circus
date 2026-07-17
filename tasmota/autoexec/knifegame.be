@@ -38,7 +38,7 @@ var YELLOW_SOLUTION = [9,10,23]
 class KnifeGame
     var strip, color_map, color_state, rnd
     var enable, stable_cnt, last_input, triggered, sound_sent
-    var solved, last_status
+    var solved, last_status, run_id
 
     def init()
         self.strip = Leds(
@@ -72,6 +72,7 @@ class KnifeGame
         self.sound_sent = false
         self.solved = false
         self.last_status = ""
+        self.run_id = 0
 
         self.strip.clear()
         self.strip.show()
@@ -86,7 +87,6 @@ class KnifeGame
             self.rnd[j] = tmp
         end
     end
-
 
     def publish_first()
         if self.sound_sent
@@ -140,17 +140,27 @@ class KnifeGame
     end
 
     def force_complete()
+        self.run_id += 1
         self.enable = true
+        self.stable_cnt = 0
+        self.last_input = 0
+        self.triggered = 0
+        self.solved = false
+
         self.publish_first()
+
+        # Preserve the white base used by normal random initialization.
         for i: 0..23
-            self.set_color(i, OFF)
+            self.set_color(i, WHITE)
         end
+
         for i: 0..2
             self.set_color(RED_SOLUTION[i], RED)
             self.set_color(GREEN_SOLUTION[i], GREEN)
             self.set_color(BLUE_SOLUTION[i], BLUE)
             self.set_color(YELLOW_SOLUTION[i], YELLOW)
         end
+
         self.strip.show()
         self.game_solved()
         self.publish_status()
@@ -158,18 +168,33 @@ class KnifeGame
     end
 
     def enable_game()
+        self.run_id += 1
         self.enable = true
         self.stable_cnt = 0
         self.last_input = 0
         self.triggered = 0
         self.sound_sent = false
         self.solved = false
+        self.last_status = ""
         self.publish_status()
 
         tasmota.resp_cmnd("Game enabled")
     end
 
-    def led_off()
+    def disable_game()
+        self.run_id += 1
+        self.enable = false
+        self.stable_cnt = 0
+        self.last_input = 0
+        self.triggered = 0
+        self.sound_sent = false
+        self.solved = false
+
+        mqtt.publish(
+            "cmnd/CANIMALWHEEL/i2sstop",
+            ""
+        )
+
         self.strip.clear()
         self.strip.show()
 
@@ -177,7 +202,14 @@ class KnifeGame
             self.color_state[i] = OFF
         end
 
-        tasmota.resp_cmnd("Led off")
+        self.last_status = ""
+        self.publish_status()
+
+        tasmota.resp_cmnd("Game disabled, reset and leds off")
+    end
+
+    def led_off()
+        self.disable_game()
     end
 
     def set_color(index, color)
@@ -214,6 +246,7 @@ class KnifeGame
         end
 
         self.strip.show()
+        self.publish_status()
 
         tasmota.resp_cmnd(
             "Colors initialized"
@@ -251,6 +284,7 @@ class KnifeGame
         end
 
         self.strip.show()
+        self.publish_status()
 
         tasmota.resp_cmnd(
             "Colors initialized randomly"
@@ -299,6 +333,15 @@ class KnifeGame
         )
     end
 
+    def delayed_rotate(idx, id)
+        if !self.enable || id != self.run_id
+            return
+        end
+
+        self.rotate(idx)
+        self.publish_status()
+    end
+
     def solution_check()
         for i: 0..2
             if self.color_state[
@@ -342,6 +385,8 @@ class KnifeGame
         print(
             'MQTT: CKNIFEGAME = {"data":"SOLVED"}'
         )
+
+        self.publish_status()
     end
 
     def every_50ms()
@@ -393,10 +438,11 @@ class KnifeGame
                 self.publish_first()
 
                 var rotate_current = current
+                var id = self.run_id
 
                 tasmota.set_timer(
                     50,
-                    / -> self.rotate(rotate_current)
+                    / -> self.delayed_rotate(rotate_current, id)
                 )
             end
 
@@ -444,6 +490,11 @@ tasmota.add_cmd(
 )
 
 tasmota.add_cmd(
+    "disable",
+    / -> knife_game_driver.disable_game()
+)
+
+tasmota.add_cmd(
     "rotate",
     /cmd, i, idx ->
         knife_game_driver.rotate(
@@ -459,7 +510,8 @@ print("KnifeGame driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
-print("off - led off")
+print("off - game disabled, reset and leds off")
+print("disable - game disabled, reset and leds off")
 print("init - initialize the colors, no WHITE")
 print("rndinit - initialize the colors, with WHITE, random order")
 print("rotate <n> - rotates the <n> block")

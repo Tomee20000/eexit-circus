@@ -1,17 +1,8 @@
-#-
-#FFFFFF   fehér
-#0D00FF   kék
-#FF5F15   sárga
-#FF0000   piros
-#004D1A   sötétzöld
-#B10061   lila / magenta
-#000000   fekete / szünet
--#
-
 import mqtt
 import json
 
 var HAND_TOPIC = "CHANDGAME1"
+var HAND_STATUS_TOPIC = "CHANDGAME1/STATUS"
 var ELEPHANT_TOPIC = "CELEPHANT"
 var GAME_TOPIC = "CHANDGAME"
 var VIDEO_TOPIC = "CC/videocontrol"
@@ -38,6 +29,9 @@ class Handgame1
     var selected_color
     var next_color
     var video_started
+    var solved_state
+    var run_id
+    var last_status
 
     def set_light(power, color)
         light.set({
@@ -46,6 +40,38 @@ class Handgame1
         })
 
         tasmota.cmd("State")
+    end
+
+    def build_status()
+        var selected = self.selected_color
+        if selected == nil
+            selected = "000000"
+        end
+
+        var text = "Inaktív"
+        if self.solved_state
+            text = "Megoldva"
+        elif self.enable
+            text = "Aktív - következő szín: " .. str(self.next_color + 1) .. " / " .. str(size(SOLUTION))
+        end
+
+        return '{"enabled":' .. (self.enable ? "true" : "false") ..
+               ',"solved":' .. (self.solved_state ? "true" : "false") ..
+               ',"progress":' .. self.next_color ..
+               ',"total":' .. size(SOLUTION) ..
+               ',"selected_color":"' .. selected ..
+               '","video_started":' .. (self.video_started ? "true" : "false") ..
+               ',"text":"' .. text .. '"}'
+    end
+
+    def publish_status()
+        var msg = self.build_status()
+        if msg == self.last_status
+            return
+        end
+
+        self.last_status = msg
+        mqtt.publish(HAND_STATUS_TOPIC, msg, true)
     end
 
     def green_blink()
@@ -72,20 +98,29 @@ class Handgame1
         self.set_light(true, color)
     end
 
-    def solved()
+    def finish_solved(id)
+        if id != self.run_id || !self.enable
+            return
+        end
+
         self.enable = false
+        self.solved_state = true
+        self.next_color = size(SOLUTION)
 
         mqtt.publish(
             HAND_TOPIC,
             "SOLVED_BLINK"
         )
 
+        self.publish_status()
         self.green_blink()
 
         mqtt.publish(
             GAME_TOPIC,
             '{"data":"SOLVED"}'
         )
+
+        self.publish_status()
     end
 
     def wrong()
@@ -101,6 +136,8 @@ class Handgame1
         else
             self.set_light(false, "FFFFFF")
         end
+
+        self.publish_status()
     end
 
     def on_mqtt_message(topic, payload)
@@ -112,11 +149,13 @@ class Handgame1
             if payload == "000000"
                 self.selected_color = nil
                 self.set_light(false, "FFFFFF")
+                self.publish_status()
                 return
             end
 
             self.selected_color = payload
             self.set_light(true, self.selected_color)
+            self.publish_status()
 
             return
         end
@@ -151,11 +190,14 @@ class Handgame1
                 end
 
                 self.next_color += 1
+                self.publish_status()
 
                 if self.next_color >= size(SOLUTION)
+                    var id = self.run_id
+
                     tasmota.set_timer(
                         1000,
-                        / -> self.solved()
+                        / -> self.finish_solved(id)
                     )
 
                     return
@@ -169,11 +211,36 @@ class Handgame1
         end
     end
 
+    def reset_game(enabled_state, stop_video)
+        self.run_id += 1
+
+        if stop_video && self.video_started
+            mqtt.publish(
+                VIDEO_TOPIC,
+                '{"data":"VIDEO4STOP"}'
+            )
+        end
+
+        self.enable = enabled_state
+        self.selected_color = nil
+        self.next_color = 0
+        self.video_started = false
+        self.solved_state = false
+
+        self.set_light(false, "FFFFFF")
+
+        self.last_status = ""
+        self.publish_status()
+    end
+
     def init()
         self.enable = false
         self.selected_color = nil
         self.next_color = 0
         self.video_started = false
+        self.solved_state = false
+        self.run_id = 0
+        self.last_status = ""
 
         self.set_light(false, "FFFFFF")
 
@@ -186,35 +253,27 @@ class Handgame1
             ELEPHANT_TOPIC,
             /t, idx, data, b -> self.on_mqtt_message(t, data)
         )
+
+        self.publish_status()
     end
 
     def enable_game()
-        self.enable = true
-        self.selected_color = nil
-        self.next_color = 0
-        self.video_started = false
-
-        self.set_light(false, "FFFFFF")
-
-        tasmota.resp_cmnd("Game enabled")
+        self.reset_game(true, true)
+        tasmota.resp_cmnd("Game enabled and reset")
     end
 
-
     def force_complete()
+        self.run_id += 1
         self.enable = true
-        self.solved()
+        self.solved_state = false
+        var id = self.run_id
+        self.finish_solved(id)
         tasmota.resp_cmnd("Handgame force completed")
     end
 
     def disable_game()
-        self.enable = false
-        self.selected_color = nil
-        self.next_color = 0
-        self.video_started = false
-
-        self.set_light(false, "FFFFFF")
-
-        tasmota.resp_cmnd("Game disabled")
+        self.reset_game(false, true)
+        tasmota.resp_cmnd("Game disabled and reset")
     end
 end
 
@@ -242,7 +301,7 @@ tasmota.add_cmd(
 print("Handgame1 driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
-print("enable - game enabled")
-print("disable - game disabled")
+print("enable - game enabled from clean state")
+print("disable - game disabled and fully reset")
 print("forcecomplete - normal solved blink and SOLVED event")
 print("--------------------------------------------------------------")

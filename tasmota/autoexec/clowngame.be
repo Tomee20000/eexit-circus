@@ -1,7 +1,5 @@
 import mqtt
 
-# ---------------- CONFIG ----------------
-
 var MQTT_TOPIC = "CCLOWNGAME"
 var EYE_STATE_TOPIC = "CCLOWNGAME/EYE/"
 
@@ -11,10 +9,8 @@ var BLINK_MS = 250
 var DEMO_BLINKS = 15
 var WIN_BLINKS = 3
 
-# Kódbeli bohóc -> fizikai gomb helye balról. Ha a fal sorrendje más, csak ezt az öt számot írd át.
+# Code clown number -> physical wall button from the left.
 var WALL_POSITION = [1, 2, 3, 4, 5]
-
-# ---------------- GPIO ----------------
 
 var NOSE1 = 25
 var NOSE2 = 26
@@ -34,8 +30,6 @@ var EYE3 = 21
 var EYE4 = 19
 var EYE5 = 18
 
-# ---------------- GAME ----------------
-
 class Clowngame
     var enable, step, state, blink_id, active_clown
     var buttons, noses, eyes
@@ -46,7 +40,7 @@ class Clowngame
     def init()
         self.enable = false
         self.step = 0
-        self.state = "idle"
+        self.state = "disabled"
         self.blink_id = 0
         self.active_clown = nil
         self.solving_started = false
@@ -63,7 +57,6 @@ class Clowngame
         self.all_off()
     end
 
-
     def wall_position(clown_idx)
         return WALL_POSITION[clown_idx]
     end
@@ -75,24 +68,24 @@ class Clowngame
         var wall_button = 0
 
         if !self.enable
-            text = "Letiltva"
+            text = "Inaktív"
         elif self.state == "win"
-            text = "5/5 kész – Bohócjáték megoldva"
+            text = "5/5 kész - Bohócos játék megoldva"
         elif self.state == "blinking" && self.active_clown != nil
             next_clown = self.active_clown + 1
             wall_button = self.wall_position(self.active_clown)
             waiting = "nose"
-            text = str(self.step) .. "/5 kész – " .. str(next_clown) .. ". bohóc villog, nyomd meg az orrát"
+            text = str(self.step) .. "/5 kész - " .. str(next_clown) .. ". bohóc villog, nyomd meg az orrát"
         elif self.state == "demo" && self.active_clown != nil
             next_clown = self.active_clown + 1
             wall_button = self.wall_position(self.active_clown)
             waiting = "demo"
-            text = "Bemutató: " .. str(next_clown) .. ". bohóc – " .. str(wall_button) .. ". gomb balról"
+            text = "Bemutató: " .. str(next_clown) .. ". bohóc - balról " .. str(wall_button) .. ". fali gomb"
         else
             next_clown = self.expected() + 1
             wall_button = self.wall_position(self.expected())
             waiting = "button"
-            text = str(self.step) .. "/5 kész – Következő: " .. str(next_clown) .. ". bohóc – " .. str(wall_button) .. ". gomb balról"
+            text = str(self.step) .. "/5 kész - Következő: " .. str(next_clown) .. ". bohóc - balról " .. str(wall_button) .. ". fali gomb"
         end
 
         var msg = '{"text":"' .. text .. '","enabled":' .. (self.enable ? "true" : "false") .. ',"state":"' .. self.state .. '","completed":' .. self.step .. ',"total":5,"next_clown":' .. next_clown .. ',"wall_button":' .. wall_button .. ',"waiting_for":"' .. waiting .. '"}'
@@ -382,11 +375,13 @@ class Clowngame
         self.blink_id = self.blink_id + 1
         self.all_off()
         self.read_inputs()
+        self.last_status = ""
+        self.publish_status()
     end
 
     def win()
         self.state = "win"
-        self.step = 0
+        self.step = size(SOLUTION)
         self.active_clown = nil
         self.solving_started = false
         self.blink_id = self.blink_id + 1
@@ -418,6 +413,8 @@ class Clowngame
             end
 
             self.read_inputs()
+            self.last_status = ""
+            self.publish_status()
             return nil
         end
 
@@ -466,17 +463,28 @@ class Clowngame
         self.read_inputs()
 
         tasmota.resp_cmnd(
-            "Game enabled"
+            "Game enabled and reset"
         )
     end
 
     def disable_game()
         self.enable = false
-        self.reset_game()
+        self.step = 0
+        self.state = "disabled"
+        self.active_clown = nil
+        self.solving_started = false
+        self.blink_id = self.blink_id + 1
+
+        # Force all five retained eye states to OFF.
+        self.last_eye_states = ["", "", "", "", ""]
+        self.all_off()
         self.read_inputs()
 
+        self.last_status = ""
+        self.publish_status()
+
         tasmota.resp_cmnd(
-            "Game disabled"
+            "Game disabled and reset"
         )
     end
 end
@@ -506,6 +514,6 @@ print("Clowngame driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
-print("disable - game disabled")
+print("disable - reset game, eyes OFF and retained HA status")
 print("forcecomplete - normal win animation and SOLVED event")
 print("--------------------------------------------------------------")

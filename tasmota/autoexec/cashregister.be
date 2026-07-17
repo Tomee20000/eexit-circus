@@ -18,18 +18,20 @@ var SCREEN = 7
 var CORRECT_CODE = "5317813775"
 
 class CashRegister
-    var code, solved, enabled
+    var code, submitted_code, solved, enabled
     var held_key
     var beep_active, beep_deadline
     var wrong_beeps_left, next_wrong_beep
     var clear_wrong_deadline, clear_wrong_active
     var fast_loop_closure
+    var last_status
 
     def init()
         self.enabled = true
         self.fast_loop_closure = / -> self.fast_loop()
 
         self.code = ""
+        self.submitted_code = ""
         self.solved = false
         self.held_key = nil
 
@@ -41,6 +43,7 @@ class CashRegister
 
         self.clear_wrong_deadline = 0
         self.clear_wrong_active = false
+        self.last_status = ""
 
         self.reset()
 
@@ -103,8 +106,44 @@ class CashRegister
         end
     end
 
+    def code_payload(value)
+        return '{"data":"' .. value .. '"}'
+    end
+
+    def publish_current_code()
+        mqtt.publish(
+            "CASHREGISTER/CURRENT_CODE",
+            self.code_payload(self.code),
+            true
+        )
+    end
+
+    def publish_submitted_code()
+        mqtt.publish(
+            "CASHREGISTER/SUBMITTED_CODE",
+            self.code_payload(self.submitted_code),
+            true
+        )
+    end
+
+    def build_status()
+        return '{"enabled":' .. (self.enabled ? "true" : "false") .. ',"solved":' .. (self.solved ? "true" : "false") .. ',"code":"' .. self.code .. '","submitted_code":"' .. self.submitted_code .. '","drawer_open":' .. (!tasmota.get_power()[DRAWER] ? "true" : "false") .. '}'
+    end
+
+    def publish_status()
+        var msg = self.build_status()
+
+        if msg == self.last_status
+            return
+        end
+
+        self.last_status = msg
+        mqtt.publish("CASHREGISTER/STATUS", msg, true)
+    end
+
     def reset()
         self.code = ""
+        self.submitted_code = ""
         self.solved = false
         self.held_key = nil
 
@@ -122,6 +161,12 @@ class CashRegister
         else
             tasmota.set_power(SCREEN, false)
         end
+
+        mqtt.publish("CASHREGISTER/KEYBOARD", "-", true)
+        self.publish_current_code()
+        self.publish_submitted_code()
+        self.last_status = ""
+        self.publish_status()
     end
 
     def show_code()
@@ -140,6 +185,8 @@ class CashRegister
         )
 
         self.code = ""
+        mqtt.publish("CASHREGISTER/KEYBOARD", "-", true)
+        self.publish_current_code()
 
         tasmota.cmd("DisplayText[zr]")
         tasmota.cmd("DisplayText WRONG CODE")
@@ -149,6 +196,7 @@ class CashRegister
 
         self.clear_wrong_active = true
         self.clear_wrong_deadline = tasmota.millis(2000)
+        self.publish_status()
     end
 
     def correct_code()
@@ -169,6 +217,9 @@ class CashRegister
         tasmota.cmd("DisplayText[zr]")
         tasmota.cmd("DisplayText CORRECT CODE")
         tasmota.set_power(DRAWER, false)
+        mqtt.publish("CASHREGISTER/KEYBOARD", "-", true)
+        self.publish_current_code()
+        self.publish_status()
     end
 
     def button_push(key)
@@ -177,6 +228,9 @@ class CashRegister
         end
 
         if key == "ENTER"
+            self.submitted_code = self.code
+            self.publish_submitted_code()
+
             if self.code == CORRECT_CODE
                 self.correct_code()
             else
@@ -190,7 +244,9 @@ class CashRegister
             self.beep()
             self.code += key
             self.show_code()
-            mqtt.publish("CASHREGISTER/KEYBOARD", self.code)
+            mqtt.publish("CASHREGISTER/KEYBOARD", self.code, true)
+            self.publish_current_code()
+            self.publish_status()
         end
     end
 
@@ -292,20 +348,9 @@ class CashRegister
 
     def enable_game()
         self.enabled = true
-        self.held_key = nil
-
-        tasmota.set_power(SCREEN, true)
-
-        if self.solved
-            tasmota.cmd("DisplayText[zr]")
-            tasmota.cmd("DisplayText CORRECT CODE")
-        else
-            self.show_code()
-        end
-
-        tasmota.resp_cmnd("Cash register enabled")
+        self.reset()
+        tasmota.resp_cmnd("Cash register enabled and reset")
     end
-
 
     def force_complete()
         self.enabled = true
@@ -315,21 +360,15 @@ class CashRegister
         self.enabled = false
         self.held_key = nil
         self.all_rows_off()
+        self.last_status = ""
+        self.publish_status()
         tasmota.resp_cmnd("Cash register force completed")
     end
 
     def disable_game()
         self.enabled = false
-        self.held_key = nil
-
-        self.wrong_beeps_left = 0
-        self.clear_wrong_active = false
-
-        self.stop_beeper()
-        self.all_rows_off()
-
-        tasmota.set_power(SCREEN, false)
-        tasmota.resp_cmnd("Cash register disabled")
+        self.reset()
+        tasmota.resp_cmnd("Cash register disabled and reset")
     end
 end
 

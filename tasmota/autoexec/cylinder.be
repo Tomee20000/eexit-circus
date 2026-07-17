@@ -330,6 +330,10 @@ class CylinderDriver
     var after_home_target
     var after_home_position
 
+    var named_position
+    var disable_requested
+    var last_status
+
     def init()
         self.actual_position = 0
         self.target_position = 0
@@ -348,6 +352,10 @@ class CylinderDriver
         self.after_home_target = 0
         self.after_home_position = 0
 
+        self.named_position = 0
+        self.disable_requested = false
+        self.last_status = ""
+
         self.loop_cb = / -> self._loop()
 
         gpio.pin_mode(STEP_PIN, gpio.OUTPUT)
@@ -357,9 +365,40 @@ class CylinderDriver
 
         gpio.digital_write(STEP_PIN, gpio.LOW)
         self._disable()
+        self.publish_position(0)
+        self.publish_status()
+    end
+
+    def build_status()
+        var phase = "idle"
+
+        if self.disable_requested
+            phase = "reset_pending"
+        elif self.unlocking
+            phase = "unlocking"
+        elif self.homing_state != 0
+            phase = "homing"
+        elif self.moving
+            phase = "moving"
+        end
+
+        return '{"phase":"' .. phase .. '","position":' .. self.named_position .. ',"steps":' .. self.actual_position .. ',"moving":' .. (self.moving ? "true" : "false") .. ',"homing":' .. (self.homing_state != 0 ? "true" : "false") .. ',"unlocking":' .. (self.unlocking ? "true" : "false") .. ',"reset_pending":' .. (self.disable_requested ? "true" : "false") .. '}'
+    end
+
+    def publish_status()
+        var msg = self.build_status()
+
+        if msg == self.last_status
+            return
+        end
+
+        self.last_status = msg
+        mqtt.publish("CCYLINDER/STATUS", msg, true)
     end
 
     def publish_position(position)
+        self.named_position = position
+
         if !mqtt.connected()
             print(
                 "MQTT not connected, position: " ..
@@ -385,6 +424,40 @@ class CylinderDriver
             " = " ..
             payload
         )
+
+        self.last_status = ""
+        self.publish_status()
+    end
+
+    def process_disable()
+        if !self.disable_requested
+            return
+        end
+
+        if self.moving || self.homing_state != 0 || self.unlocking
+            return
+        end
+
+        self.disable_requested = false
+        self.last_status = ""
+        self.publish_status()
+        self.home(nil, nil)
+    end
+
+    def disable_game()
+        self.disable_requested = true
+        cylinder_led_ring.stop(nil, nil)
+
+        # Finish the current move, then home, lock, and publish position 0.
+        self.process_disable()
+        self.last_status = ""
+        self.publish_status()
+        tasmota.resp_cmnd("Cylinder reset requested")
+    end
+
+    def every_50ms()
+        self.process_disable()
+        self.publish_status()
     end
 
     def lock(cmd, idx)
@@ -1008,6 +1081,11 @@ tasmota.add_driver(
 )
 
 tasmota.add_cmd(
+    "disable",
+    / -> cylinder_driver.disable_game()
+)
+
+tasmota.add_cmd(
     "lock",
     /cmd, idx ->
         cylinder_driver.lock(
@@ -1104,6 +1182,7 @@ print("------------------------------------------------")
 print("Cylinder driver loaded")
 print("------------------------------------------------")
 print("Commands:")
+print("disable - finish current motion, then home and lock")
 print("lock")
 print("unlock")
 print("home")

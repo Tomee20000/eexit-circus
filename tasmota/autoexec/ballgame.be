@@ -50,7 +50,7 @@ class BallGame
     var blink_last_time
     var blink_max_step
     var last_status
-
+    var enabled
 
     def build_status()
         var indicator = "off"
@@ -62,7 +62,7 @@ class BallGame
             end
         end
         var switch_on = self.switch_state == 0
-        return '{"tube":"' .. self.topic .. '","ball":"' .. self.current_ball .. '","present":' .. (self.card_present ? "true" : "false") .. ',"switch":' .. (switch_on ? "true" : "false") .. ',"indicator":"' .. indicator .. '","blink_active":' .. (self.blink_active ? "true" : "false") .. ',"blink_step":' .. self.blink_step .. ',"blink_total":' .. self.blink_max_step .. '}'
+        return '{"tube":"' .. self.topic .. '","enabled":' .. (self.enabled ? "true" : "false") .. ',"ball":"' .. self.current_ball .. '","present":' .. (self.card_present ? "true" : "false") .. ',"switch":' .. (switch_on ? "true" : "false") .. ',"indicator":"' .. indicator .. '","blink_active":' .. (self.blink_active ? "true" : "false") .. ',"blink_step":' .. self.blink_step .. ',"blink_total":' .. self.blink_max_step .. '}'
     end
 
     def publish_status()
@@ -91,6 +91,10 @@ class BallGame
     end
 
     def card_read(uid)
+        if !self.enabled
+            return
+        end
+
         self.last_read_time = tasmota.millis()
         self.card_present = true
         self.timeout_sent = false
@@ -101,13 +105,13 @@ class BallGame
             self.current_ball = ball
 
             print("UID: " .. uid .. " -> " .. ball)
-            mqtt.publish(self.topic .. "/BALL", ball)
+            mqtt.publish(self.topic .. "/BALL", ball, true)
         end
     end
 
     def clear_ball()
         if self.current_ball != "-"
-            mqtt.publish(self.topic .. "/BALL", "-")
+            mqtt.publish(self.topic .. "/BALL", "-", true)
         end
 
         self.current_ball = "-"
@@ -127,6 +131,11 @@ class BallGame
     end
 
     def start_blink(power, opposite_power, max_step)
+        if !self.enabled
+            tasmota.resp_cmnd("BallGame disabled")
+            return false
+        end
+
         tasmota.set_power(opposite_power, false)
         tasmota.set_power(power, false)
 
@@ -186,6 +195,41 @@ class BallGame
             tasmota.set_power(self.blink_power, false)
             self.blink_active = false
         end
+    end
+
+    def reset_state(enabled_state)
+        self.enabled = enabled_state
+
+        self.blink_active = false
+        self.blink_power = RED_LED
+        self.blink_step = 0
+        self.blink_max_step = 5
+        self.blink_last_time = tasmota.millis()
+
+        tasmota.set_power(RED_LED, false)
+        tasmota.set_power(GREEN_LED, false)
+
+        self.current_ball = "-"
+        self.card_present = false
+        self.timeout_sent = true
+        self.last_read_time = tasmota.millis()
+        mqtt.publish(self.topic .. "/BALL", "-", true)
+
+        self.switch_state = gpio.digital_read(SWITCH_PIN)
+        self.publish_switch(self.switch_state)
+
+        self.last_status = ""
+        self.publish_status()
+    end
+
+    def enable_game()
+        self.reset_state(true)
+        tasmota.resp_cmnd("BallGame enabled and reset")
+    end
+
+    def disable_game()
+        self.reset_state(false)
+        tasmota.resp_cmnd("BallGame disabled and reset")
     end
 
     def publish_switch(state)
@@ -380,6 +424,7 @@ class BallGame
     def init()
         self.topic = tasmota.cmd("Topic")["Topic"]
         self.switch_state = gpio.digital_read(SWITCH_PIN)
+        self.enabled = true
 
         self.blink_active = false
         self.blink_power = RED_LED
@@ -411,7 +456,10 @@ class BallGame
             bytes("55550000000000000000000000000000")
         )
 
-        mqtt.publish(self.topic .. "/BALL", "-")
+        mqtt.publish(self.topic .. "/BALL", "-", true)
+        self.publish_switch(self.switch_state)
+        self.last_status = ""
+        self.publish_status()
 
         tasmota.add_fast_loop(
             / -> self.fast_loop()
@@ -422,6 +470,16 @@ end
 var ball_game_driver = BallGame()
 
 tasmota.add_driver(ball_game_driver)
+
+tasmota.add_cmd(
+    "enable",
+    / -> ball_game_driver.enable_game()
+)
+
+tasmota.add_cmd(
+    "disable",
+    / -> ball_game_driver.disable_game()
+)
 
 tasmota.add_cmd(
     "redblink",
@@ -441,6 +499,8 @@ tasmota.add_cmd(
 print("BallGame driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
+print("enable - enable and reset this tube")
+print("disable - disable, clear ball and LEDs")
 print("redblink - red led blink 3 times")
 print("greenblink - green led blink 3 times")
 print("solveblink - green led blink 1 time")

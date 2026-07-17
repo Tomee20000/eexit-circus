@@ -64,6 +64,7 @@ class ClawMachine
     var phase, anim_id
     var claw_ramp_start, homing_ramp_start
     var last_status
+    var coin_ready
 
     def pwm_pair(pin1, pin2, v1, v2)
         if v1 < 0
@@ -156,49 +157,48 @@ class ClawMachine
         return true
     end
 
-
     def status_text()
         if self.phase == 1
-            return "Karom ciklus indul"
+            return "Karomciklus indul"
         elif self.phase == 2
             return "Karom leengedése"
         elif self.phase == 3
-            return "Megfogás"
+            return "Markolás"
         elif self.phase == 4
             return "Karom felhúzása"
         elif self.phase == 5
-            return "XY home keresése"
+            return "X/Y tengelyek alaphelyzetbe állítása"
         elif self.phase == 6
             return "Labda elengedése"
         elif self.phase == 7 || self.phase == 8
-            return "Karom végső felhúzása"
+            return "Végső karomfelhúzás"
         elif self.phase == 9 || self.phase == 10
-            return "Letiltás és homing"
+            return "Letiltás és alaphelyzetbe állítás"
         elif self.phase == 11
             return "Kézi leengedés"
         elif self.phase == 12
             return "Kézi felhúzás"
         elif self.phase == 20
-            return "Full cycle: karom home"
+            return "Teljes ciklus: karom alaphelyzet"
         elif self.phase == 21
-            return "Full cycle: XY home"
+            return "Teljes ciklus: X/Y alaphelyzet"
         elif self.phase == 22
-            return "Full cycle: leengedés"
+            return "Teljes ciklus: leengedés"
         elif self.phase == 23
-            return "Full cycle: várakozás"
+            return "Teljes ciklus: várakozás"
         elif self.phase == 24
-            return "Full cycle: felhúzás"
+            return "Teljes ciklus: felhúzás"
         end
 
         if self.motor_lr_state != 0 || self.motor_fb_state != 0
-            return "Játékos mozgatja"
+            return "Játékos vezérlés"
         end
 
         if self.is_coin_inserted
             return "Játékra kész"
         end
 
-        return "Letiltva"
+        return "Inaktív"
     end
 
     def publish_status()
@@ -222,7 +222,16 @@ class ClawMachine
     end
 
     def fast_loop()
-        if !gpio.digital_read(COIN) && !self.is_coin_inserted && !self.in_claw_animation
+        if gpio.digital_read(COIN)
+            self.coin_ready = true
+        end
+
+        if !gpio.digital_read(COIN) &&
+           self.coin_ready &&
+           !self.is_coin_inserted &&
+           !self.in_claw_animation
+
+            self.coin_ready = false
             self.enable_game()
 
             var payload = '{"data":"ENABLED"}'
@@ -245,6 +254,7 @@ class ClawMachine
         self.claw_ramp_start = 0
         self.homing_ramp_start = 0
         self.last_status = ""
+        self.coin_ready = gpio.digital_read(COIN)
 
         self.all_motors_stop()
         self.claw_relay_off()
@@ -255,13 +265,18 @@ class ClawMachine
 
     def enable_game()
         self.is_coin_inserted = true
+        self.last_status = ""
+        self.publish_status()
         tasmota.resp_cmnd("Game enabled")
     end
 
     def disable_game()
         self.is_coin_inserted = false
+        self.coin_ready = false
         self.start_disable_homing()
-        tasmota.resp_cmnd("Game disabled, homing started")
+        self.last_status = ""
+        self.publish_status()
+        tasmota.resp_cmnd("Game disabled, reset homing started")
     end
 
     def start_claw_animation()
@@ -440,6 +455,8 @@ class ClawMachine
 
         self.in_claw_animation = true
         self.phase = 9
+        self.claw_ramp_start = 0
+        self.homing_ramp_start = 0
 
         self.all_motors_stop()
         gpio.digital_write(CLAW, gpio.LOW)
@@ -509,6 +526,10 @@ class ClawMachine
 
         self.phase = 0
         self.in_claw_animation = false
+        self.claw_ramp_start = 0
+        self.homing_ramp_start = 0
+        self.last_status = ""
+        self.publish_status()
     end
 
     def claw_down_cmd()
@@ -957,7 +978,7 @@ print("ClawMachine driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - game enabled")
-print("disable - game disabled and homing started")
+print("disable - disable, open claw and home every axis")
 print("clawdown - claw down full speed")
 print("clawup - claw up full speed")
 print("fullcycle - homing, down, full up")
