@@ -37,6 +37,7 @@ autoload.autoload_files_for_topic = {
     "CCLOWNGAME":"/autoexec/clowngame.be",
     "CLASERGUN":"/autoexec/lasergun.be",
     "CSERVICE3":"/autoexec/bicycle.be",
+    "CCAROUSEL":"/autoexec/carousel.be",
 }
 
 autoload.extra_files_for_script = {
@@ -61,6 +62,7 @@ autoload.game_files = [
     "/autoexec/clowngame.be",
     "/autoexec/lasergun.be",
     "/autoexec/bicycle.be",
+    "/autoexec/carousel.be",
 ]
 
 autoload.lib_files = [

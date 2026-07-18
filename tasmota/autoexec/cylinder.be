@@ -208,7 +208,7 @@ class CylinderLedRing
         )
     end
 
-    def auto_green_lock()
+    def auto_green_locked()
         self.start_blink(
             0,
             255,
@@ -448,7 +448,6 @@ class CylinderDriver
         self.disable_requested = true
         cylinder_led_ring.stop(nil, nil)
 
-        # Finish the current move, then home, lock, and publish position 0.
         self.process_disable()
         self.last_status = ""
         self.publish_status()
@@ -462,8 +461,6 @@ class CylinderDriver
 
     def lock(cmd, idx)
         self._enable()
-
-        cylinder_led_ring.auto_green_lock()
 
         tasmota.set_power(LAUNLOCK, false)
         tasmota.set_power(LALOCK, true)
@@ -480,13 +477,13 @@ class CylinderDriver
         tasmota.set_power(LALOCK, false)
         self._disable()
 
+        cylinder_led_ring.auto_green_locked()
+
         tasmota.resp_cmnd("Cylinder locked")
     end
 
     def lock_and_publish(position)
         self._enable()
-
-        cylinder_led_ring.auto_green_lock()
 
         tasmota.set_power(LAUNLOCK, false)
         tasmota.set_power(LALOCK, true)
@@ -498,7 +495,10 @@ class CylinderDriver
 
         tasmota.set_timer(
             LOCK_MS,
-            / -> self._lock_done_publish(position)
+            / -> self._lock_done_publish(
+                position,
+                true
+            )
         )
     end
 
@@ -515,15 +515,22 @@ class CylinderDriver
 
         tasmota.set_timer(
             LOCK_MS,
-            / -> self._lock_done_publish(position)
+            / -> self._lock_done_publish(
+                position,
+                false
+            )
         )
     end
 
-    def _lock_done_publish(position)
+    def _lock_done_publish(position, start_led)
         tasmota.set_power(LALOCK, false)
         self._disable()
 
         self.publish_position(position)
+
+        if start_led
+            cylinder_led_ring.auto_green_locked()
+        end
 
         print(
             "Cylinder locked, position published: " ..

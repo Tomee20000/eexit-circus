@@ -46,6 +46,7 @@ if script_file == nil
         "CCLOWNGAME":"/autoexec/clowngame.be",
         "CLASERGUN":"/autoexec/lasergun.be",
         "CSERVICE3":"/autoexec/bicycle.be",
+        "CCAROUSEL":"/autoexec/carousel.be",
     }
 
     try
