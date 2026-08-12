@@ -5,7 +5,6 @@ var HAND_TOPIC = "CHANDGAME1"
 var HAND_STATUS_TOPIC = "CHANDGAME1/STATUS"
 var ELEPHANT_TOPIC = "CELEPHANT"
 var GAME_TOPIC = "CHANDGAME"
-var VIDEO_TOPIC = "CC/videocontrol"
 var HAND_SENSOR_TOPIC = "tele/CHANDGAME2/SENSOR"
 
 var UID_MAP = {
@@ -28,7 +27,6 @@ class Handgame1
     var enable
     var selected_color
     var next_color
-    var video_started
     var solved_state
     var run_id
     var last_status
@@ -60,8 +58,7 @@ class Handgame1
                ',"progress":' .. self.next_color ..
                ',"total":' .. size(SOLUTION) ..
                ',"selected_color":"' .. selected ..
-               '","video_started":' .. (self.video_started ? "true" : "false") ..
-               ',"text":"' .. text .. '"}'
+               '","text":"' .. text .. '"}'
     end
 
     def publish_status()
@@ -180,15 +177,6 @@ class Handgame1
             end
 
             if self.selected_color == SOLUTION[self.next_color]
-                if !self.video_started
-                    self.video_started = true
-
-                    mqtt.publish(
-                        VIDEO_TOPIC,
-                        '{"data":"VIDEO4START"}'
-                    )
-                end
-
                 self.next_color += 1
                 self.publish_status()
 
@@ -204,27 +192,18 @@ class Handgame1
                 end
 
                 self.blink_color(self.selected_color)
-
             else
                 self.wrong()
             end
         end
     end
 
-    def reset_game(enabled_state, stop_video)
+    def reset_game(enabled_state)
         self.run_id += 1
-
-        if stop_video && self.video_started
-            mqtt.publish(
-                VIDEO_TOPIC,
-                '{"data":"VIDEO4STOP"}'
-            )
-        end
 
         self.enable = enabled_state
         self.selected_color = nil
         self.next_color = 0
-        self.video_started = false
         self.solved_state = false
 
         self.set_light(false, "FFFFFF")
@@ -237,7 +216,6 @@ class Handgame1
         self.enable = false
         self.selected_color = nil
         self.next_color = 0
-        self.video_started = false
         self.solved_state = false
         self.run_id = 0
         self.last_status = ""
@@ -258,7 +236,7 @@ class Handgame1
     end
 
     def enable_game()
-        self.reset_game(true, true)
+        self.reset_game(true)
         tasmota.resp_cmnd("Game enabled and reset")
     end
 
@@ -266,13 +244,15 @@ class Handgame1
         self.run_id += 1
         self.enable = true
         self.solved_state = false
+
         var id = self.run_id
         self.finish_solved(id)
+
         tasmota.resp_cmnd("Handgame force completed")
     end
 
     def disable_game()
-        self.reset_game(false, true)
+        self.reset_game(false)
         tasmota.resp_cmnd("Game disabled and reset")
     end
 end

@@ -10,7 +10,7 @@ var DEMO_BLINKS = 15
 var WIN_BLINKS = 3
 
 # Code clown number -> physical wall button from the left.
-var WALL_POSITION = [1, 2, 3, 4, 5]
+var WALL_POSITION = [5, 1, 2, 4, 3]
 
 var NOSE1 = 25
 var NOSE2 = 26
@@ -89,9 +89,11 @@ class Clowngame
         end
 
         var msg = '{"text":"' .. text .. '","enabled":' .. (self.enable ? "true" : "false") .. ',"state":"' .. self.state .. '","completed":' .. self.step .. ',"total":5,"next_clown":' .. next_clown .. ',"wall_button":' .. wall_button .. ',"waiting_for":"' .. waiting .. '"}'
+
         if msg == self.last_status
             return
         end
+
         self.last_status = msg
         mqtt.publish("CCLOWNGAME/STATUS", msg, true)
     end
@@ -197,36 +199,28 @@ class Clowngame
         )
     end
 
+    def wrong_and_reset()
+        self.publish_wrong()
+        self.reset_game()
+    end
+
     def button_pressed(i)
         if self.state == "win"
             return nil
         end
 
         if self.state == "blinking"
-            if i == self.active_clown
-                self.start_step(i)
-            else
-                if self.solving_started
-                    self.publish_wrong()
-                    self.reset_game()
-                else
-                    self.demo_blink(i)
-                end
-            end
-
+            self.wrong_and_reset()
             return nil
         end
 
         if self.state == "demo"
-            if self.step == 0
-                if i == self.expected()
-                    self.start_step(i)
-                else
-                    self.demo_blink(i)
-                end
+            if self.solving_started || self.step > 0
+                self.wrong_and_reset()
+            elif i == self.expected()
+                self.start_step(i)
             else
-                self.publish_wrong()
-                self.reset_game()
+                self.demo_blink(i)
             end
 
             return nil
@@ -234,13 +228,10 @@ class Clowngame
 
         if i == self.expected()
             self.start_step(i)
-
-        elif self.step == 0 && !self.solving_started
-            self.demo_blink(i)
-
+        elif self.solving_started || self.step > 0
+            self.wrong_and_reset()
         else
-            self.publish_wrong()
-            self.reset_game()
+            self.demo_blink(i)
         end
     end
 
@@ -250,8 +241,8 @@ class Clowngame
         end
 
         if self.state == "blinking" &&
-           i == self.active_clown &&
-           i == self.expected()
+        i == self.active_clown &&
+        i == self.expected()
 
             self.blink_id = self.blink_id + 1
             self.step = self.step + 1
@@ -266,16 +257,10 @@ class Clowngame
                 self.read_inputs()
             end
 
-        else
-            if self.solving_started ||
-               self.step > 0 ||
-               self.state == "blinking"
-
-                self.publish_wrong()
-            end
-
-            self.reset_game()
+            return nil
         end
+
+        self.wrong_and_reset()
     end
 
     def start_step(i)
@@ -373,8 +358,10 @@ class Clowngame
         self.active_clown = nil
         self.solving_started = false
         self.blink_id = self.blink_id + 1
+
         self.all_off()
         self.read_inputs()
+
         self.last_status = ""
         self.publish_status()
     end
@@ -475,7 +462,6 @@ class Clowngame
         self.solving_started = false
         self.blink_id = self.blink_id + 1
 
-        # Force all five retained eye states to OFF.
         self.last_eye_states = ["", "", "", "", ""]
         self.all_off()
         self.read_inputs()
