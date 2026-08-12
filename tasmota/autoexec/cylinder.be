@@ -2,6 +2,7 @@ import gpio
 import mqtt
 
 var MQTT_TOPIC = "CCYLINDER/pos"
+var STATUS_TOPIC = "CCYLINDER/STATUS"
 
 var STEP_PIN = 32
 var DIR_PIN = 33
@@ -10,6 +11,9 @@ var HOME_PIN = 22
 
 var LALOCK = 0
 var LAUNLOCK = 1
+
+var UNKNOWN_POSITION = -1
+var UNKNOWN_POSITION_TEXT = "Ismeretlen"
 
 var pos0 = 0
 var pos1 = 475
@@ -352,7 +356,7 @@ class CylinderDriver
         self.after_home_target = 0
         self.after_home_position = 0
 
-        self.named_position = 0
+        self.named_position = UNKNOWN_POSITION
         self.disable_requested = false
         self.last_status = ""
 
@@ -365,7 +369,8 @@ class CylinderDriver
 
         gpio.digital_write(STEP_PIN, gpio.LOW)
         self._disable()
-        self.publish_position(0)
+
+        self.publish_position(UNKNOWN_POSITION)
         self.publish_status()
     end
 
@@ -393,37 +398,42 @@ class CylinderDriver
         end
 
         self.last_status = msg
-        mqtt.publish("CCYLINDER/STATUS", msg, true)
+        mqtt.publish(STATUS_TOPIC, msg, true)
     end
 
     def publish_position(position)
         self.named_position = position
 
-        if !mqtt.connected()
-            print(
-                "MQTT not connected, position: " ..
-                position
-            )
-            return
+        var position_text = str(position)
+
+        if position == UNKNOWN_POSITION
+            position_text = UNKNOWN_POSITION_TEXT
         end
 
         var payload =
             "{\"data\":\"" ..
-            str(position) ..
+            position_text ..
             "\"}"
 
-        mqtt.publish(
-            MQTT_TOPIC,
-            payload,
-            true
-        )
+        if mqtt.connected()
+            mqtt.publish(
+                MQTT_TOPIC,
+                payload,
+                true
+            )
 
-        print(
-            "MQTT: " ..
-            MQTT_TOPIC ..
-            " = " ..
-            payload
-        )
+            print(
+                "MQTT: " ..
+                MQTT_TOPIC ..
+                " = " ..
+                payload
+            )
+        else
+            print(
+                "MQTT not connected, position: " ..
+                position_text
+            )
+        end
 
         self.last_status = ""
         self.publish_status()
@@ -552,6 +562,8 @@ class CylinderDriver
 
     def _unlock_async(done_cb)
         self.unlocking = true
+
+        self.publish_position(UNKNOWN_POSITION)
 
         self._disable()
 
@@ -955,6 +967,7 @@ class CylinderDriver
 
         self._stop_loop()
         self._disable()
+        self.publish_position(UNKNOWN_POSITION)
 
         tasmota.resp_cmnd(
             "Home error: sensor not found"
