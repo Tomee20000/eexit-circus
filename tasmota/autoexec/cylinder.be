@@ -323,6 +323,7 @@ class CylinderDriver
     var homing_state
     var homing_steps
     var unlocking
+    var locking
 
     var last_ms
     var loop_running
@@ -336,6 +337,7 @@ class CylinderDriver
 
     var named_position
     var disable_requested
+    var home_requested
     var last_status
 
     def init()
@@ -348,6 +350,7 @@ class CylinderDriver
         self.homing_state = 0
         self.homing_steps = 0
         self.unlocking = false
+        self.locking = false
 
         self.loop_running = false
         self.lock_after_move = false
@@ -358,6 +361,7 @@ class CylinderDriver
 
         self.named_position = UNKNOWN_POSITION
         self.disable_requested = false
+        self.home_requested = false
         self.last_status = ""
 
         self.loop_cb = / -> self._loop()
@@ -381,13 +385,15 @@ class CylinderDriver
             phase = "reset_pending"
         elif self.unlocking
             phase = "unlocking"
+        elif self.locking
+            phase = "locking"
         elif self.homing_state != 0
             phase = "homing"
         elif self.moving
             phase = "moving"
         end
 
-        return '{"phase":"' .. phase .. '","position":' .. self.named_position .. ',"steps":' .. self.actual_position .. ',"moving":' .. (self.moving ? "true" : "false") .. ',"homing":' .. (self.homing_state != 0 ? "true" : "false") .. ',"unlocking":' .. (self.unlocking ? "true" : "false") .. ',"reset_pending":' .. (self.disable_requested ? "true" : "false") .. '}'
+        return '{"phase":"' .. phase .. '","position":' .. self.named_position .. ',"steps":' .. self.actual_position .. ',"moving":' .. (self.moving ? "true" : "false") .. ',"homing":' .. (self.homing_state != 0 ? "true" : "false") .. ',"unlocking":' .. (self.unlocking ? "true" : "false") .. ',"locking":' .. (self.locking ? "true" : "false") .. ',"reset_pending":' .. (self.disable_requested ? "true" : "false") .. ',"home_queued":' .. (self.home_requested ? "true" : "false") .. '}'
     end
 
     def publish_status()
@@ -444,11 +450,27 @@ class CylinderDriver
             return
         end
 
-        if self.moving || self.homing_state != 0 || self.unlocking
+        if self.moving || self.homing_state != 0 || self.unlocking || self.locking
             return
         end
 
         self.disable_requested = false
+        self.home_requested = false
+        self.last_status = ""
+        self.publish_status()
+        self.home(nil, nil)
+    end
+
+    def process_home_request()
+        if !self.home_requested
+            return
+        end
+
+        if self.disable_requested || self.moving || self.homing_state != 0 || self.unlocking || self.locking
+            return
+        end
+
+        self.home_requested = false
         self.last_status = ""
         self.publish_status()
         self.home(nil, nil)
@@ -456,6 +478,7 @@ class CylinderDriver
 
     def disable_game()
         self.disable_requested = true
+        self.home_requested = false
         cylinder_led_ring.stop(nil, nil)
 
         self.process_disable()
@@ -466,10 +489,14 @@ class CylinderDriver
 
     def every_50ms()
         self.process_disable()
+        self.process_home_request()
         self.publish_status()
     end
 
     def lock(cmd, idx)
+        self.locking = true
+        self.last_status = ""
+        self.publish_status()
         self._enable()
 
         tasmota.set_power(LAUNLOCK, false)
@@ -486,6 +513,9 @@ class CylinderDriver
     def _lock_done()
         tasmota.set_power(LALOCK, false)
         self._disable()
+        self.locking = false
+        self.last_status = ""
+        self.publish_status()
 
         cylinder_led_ring.auto_green_locked()
 
@@ -493,6 +523,9 @@ class CylinderDriver
     end
 
     def lock_and_publish(position)
+        self.locking = true
+        self.last_status = ""
+        self.publish_status()
         self._enable()
 
         tasmota.set_power(LAUNLOCK, false)
@@ -513,6 +546,9 @@ class CylinderDriver
     end
 
     def lock_and_publish_no_led(position)
+        self.locking = true
+        self.last_status = ""
+        self.publish_status()
         self._enable()
 
         tasmota.set_power(LAUNLOCK, false)
@@ -535,6 +571,7 @@ class CylinderDriver
     def _lock_done_publish(position, start_led)
         tasmota.set_power(LALOCK, false)
         self._disable()
+        self.locking = false
 
         self.publish_position(position)
 
@@ -551,7 +588,8 @@ class CylinderDriver
     def unlock(cmd, idx)
         if self.moving ||
            self.homing_state != 0 ||
-           self.unlocking
+           self.unlocking ||
+           self.locking
 
             tasmota.resp_cmnd("Busy")
             return
@@ -592,14 +630,25 @@ class CylinderDriver
     end
 
     def home(cmd, idx)
-        if self.moving ||
-           self.homing_state != 0 ||
-           self.unlocking
-
-            tasmota.resp_cmnd("Busy")
+        if self.homing_state != 0
+            tasmota.resp_cmnd("Homing already active")
             return
         end
 
+        if self.unlocking && self.pending_position == 0
+            tasmota.resp_cmnd("Homing already pending")
+            return
+        end
+
+        if self.moving || self.unlocking || self.locking
+            self.home_requested = true
+            self.last_status = ""
+            self.publish_status()
+            tasmota.resp_cmnd("Home queued")
+            return
+        end
+
+        self.home_requested = false
         self.pending_position = 0
 
         self._unlock_async(
@@ -621,7 +670,8 @@ class CylinderDriver
     def set_pos(cmd, i, position)
         if self.moving ||
            self.homing_state != 0 ||
-           self.unlocking
+           self.unlocking ||
+           self.locking
 
             tasmota.resp_cmnd("Busy")
             return
@@ -693,7 +743,8 @@ class CylinderDriver
     def move_steps(cmd, i, steps)
         if self.moving ||
            self.homing_state != 0 ||
-           self.unlocking
+           self.unlocking ||
+           self.locking
 
             tasmota.resp_cmnd("Busy")
             return
@@ -757,6 +808,9 @@ class CylinderDriver
                         self.pending_position
 
                     self.pending_position = -1
+                    self.locking = true
+                    self.last_status = ""
+                    self.publish_status()
 
                     tasmota.set_timer(
                         1000,
@@ -765,6 +819,9 @@ class CylinderDriver
                         )
                     )
                 else
+                    self.locking = true
+                    self.last_status = ""
+                    self.publish_status()
                     tasmota.set_timer(
                         1000,
                         / -> self.lock(nil, nil)
@@ -864,6 +921,9 @@ class CylinderDriver
                     self.pending_position
 
                 self.pending_position = -1
+                self.locking = true
+                self.last_status = ""
+                self.publish_status()
 
                 tasmota.set_timer(
                     1000,
@@ -872,6 +932,9 @@ class CylinderDriver
                     )
                 )
             else
+                self.locking = true
+                self.last_status = ""
+                self.publish_status()
                 tasmota.set_timer(
                     1000,
                     / -> self.lock(nil, nil)
@@ -947,6 +1010,9 @@ class CylinderDriver
             self.pending_position = -1
 
             self._stop_loop()
+            self.locking = true
+            self.last_status = ""
+            self.publish_status()
 
             tasmota.set_timer(
                 1250,
