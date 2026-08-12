@@ -9,28 +9,39 @@ var input6 = 4
 switchmode0 2
 -#
 
-import string
 import mqtt
 
-var MQTT_SUBTOPIC = "SIGN"
+var HARD_MODE = true
 
-var LED1 = 0 #C1 32
-var LED2 = 1 #I 33
-var LED3 = 2 #R 25
-var LED4 = 3 #C2 26
-var LED5 = 4 #U 27
-var LED6 = 5 #S 14
+var LED1 = 0 # C1 32
+var LED2 = 1 # I 33
+var LED3 = 2 # R 25
+var LED4 = 3 # C2 26
+var LED5 = 4 # U 27
+var LED6 = 5 # S 14
 var LED_GREENRED = 6
 
-var INTRO_MS = 60000
 var SENSOR_HOLD_MS = 250
 var INPUT_COOLDOWN_MS = 350
-var GLITCH_STEP_MS = 120
+
+var RANDOM_STEP_MS = 80
+var CHASE_STEP_MS = 180
+
 
 class Sign
     var enabled, solved, animating
-    var phase, anim_id, glitch_pos
-    var glitch_masks
+    var phase, anim_id
+    var hard_mode
+
+    var random_seed
+
+    var chase_pos
+    var chase_sequence
+    var chase_saved_phase
+    var chase_saved_animating
+    var chase_saved_mask
+    var chase_saved_greenred
+
     var input_pending, input_token, input_last
     var mqtt_topic
     var last_status
@@ -39,15 +50,21 @@ class Sign
         self.enabled = false
         self.solved = false
         self.animating = false
+
         self.phase = 0
         self.anim_id = 0
-        self.glitch_pos = 0
 
-        self.glitch_masks = [
-            63, 0, 63, 2, 63, 18, 50, 0,
-            32, 63, 40, 0, 48, 32, 34, 0,
-            63, 8, 0, 32
-        ]
+        self.hard_mode = HARD_MODE
+
+        self.random_seed = 1
+
+        self.chase_pos = 0
+        self.chase_sequence = [0, 1, 2, 3, 4, 5, 4, 3, 2, 1]
+
+        self.chase_saved_phase = 0
+        self.chase_saved_animating = false
+        self.chase_saved_mask = 0
+        self.chase_saved_greenred = false
 
         self.input_pending = [false, false, false, false, false, false, false]
         self.input_token = [0, 0, 0, 0, 0, 0, 0]
@@ -81,6 +98,20 @@ class Sign
     def play_state()
         self.letters_off()
         tasmota.set_power(LED6, true)
+        tasmota.set_power(LED_GREENRED, false)
+    end
+
+    def get_letters_mask()
+        var p = tasmota.get_power()
+        var mask = 0
+
+        for i:0..5
+            if p[i]
+                mask = mask | (1 << i)
+            end
+        end
+
+        return mask
     end
 
     def set_letters_mask(mask)
@@ -108,34 +139,37 @@ class Sign
         end
     end
 
+    def stop_animation_timers()
+        tasmota.remove_timer("sign_random")
+        tasmota.remove_timer("sign_chase")
+    end
+
     def build_status()
         var p = tasmota.get_power()
-        var mask = 0
+        var mask = self.get_letters_mask()
 
-        for i: 0..5
-            if p[i]
-                mask = mask | (1 << i)
-            end
-        end
+        var text = "Inactive"
 
-        var text = "Inaktív"
         if self.solved
-            text = "Megoldva"
+            text = "Solved"
+        elif self.phase == 4
+            text = "Animation - chase"
         elif self.enabled
             if self.phase == 1
-                text = "Aktív - bevezető animáció"
-            elif self.phase == 2
-                text = "Aktív - villogás"
+                text = "Active - random flicker"
             elif self.phase == 3
-                text = "Aktív - feladvány"
+                text = "Active - puzzle"
             else
-                text = "Aktív"
+                text = "Active"
             end
+        elif self.phase == 1
+            text = "Animation - random flicker"
         end
 
         return '{"enabled":' .. (self.enabled ? "true" : "false") ..
                ',"solved":' .. (self.solved ? "true" : "false") ..
                ',"animating":' .. (self.animating ? "true" : "false") ..
+               ',"hard_mode":' .. (self.hard_mode ? "true" : "false") ..
                ',"phase":' .. self.phase ..
                ',"letters_mask":' .. mask ..
                ',"greenred":' .. (p[LED_GREENRED] ? "true" : "false") ..
@@ -144,6 +178,7 @@ class Sign
 
     def publish_status()
         var msg = self.build_status()
+
         if msg == self.last_status
             return
         end
@@ -152,27 +187,184 @@ class Sign
         mqtt.publish("CSIGN/STATUS", msg, true)
     end
 
-    def cmd_enable(cmd, idx, payload, payload_json)
+
+    # RANDOM FLICKER
+
+    def start_random()
         self.anim_id = self.anim_id + 1
         var id = self.anim_id
 
-        self.enabled = true
-        self.solved = false
-        self.animating = true
+        self.stop_animation_timers()
+
         self.phase = 1
-        self.glitch_pos = 0
+        self.animating = true
 
-        self.clear_input_state()
-        tasmota.remove_timer("sign_intro")
-        tasmota.remove_timer("sign_glitch")
+        self.random_seed = (tasmota.millis() % 63) + 1
 
-        self.letters_on()
         tasmota.set_power(LED_GREENRED, false)
-
-        tasmota.set_timer(INTRO_MS, / -> self.start_glitch(id), "sign_intro")
 
         self.last_status = ""
         self.publish_status()
+
+        self.random_step(id)
+    end
+
+    def random_step(id)
+        if id != self.anim_id || self.phase != 1
+            return nil
+        end
+
+        self.random_seed = (self.random_seed * 13 + 17) % 64
+
+        self.set_letters_mask(self.random_seed)
+
+        tasmota.set_timer(
+            RANDOM_STEP_MS,
+            / -> self.random_step(id),
+            "sign_random"
+        )
+    end
+
+    def stop_random_for_input()
+        if self.phase != 1
+            return false
+        end
+
+        self.anim_id = self.anim_id + 1
+        tasmota.remove_timer("sign_random")
+
+        self.animating = false
+
+        if self.enabled && !self.solved
+            self.phase = 3
+
+            self.clear_input_state()
+            self.play_state()
+
+            mqtt.publish(self.mqtt_topic, '{"data":"LAMPOFF"}')
+
+            self.last_status = ""
+            self.publish_status()
+
+            return true
+        end
+
+        self.phase = 0
+
+        if self.solved
+            self.letters_on()
+        else
+            self.all_off()
+        end
+
+        self.last_status = ""
+        self.publish_status()
+
+        return false
+    end
+
+
+    # CHASE ANIMATION
+
+    def cmd_chase()
+        if self.phase == 4
+            tasmota.resp_cmnd_str("Chase already running")
+            return
+        end
+
+        var p = tasmota.get_power()
+
+        self.chase_saved_phase = self.phase
+        self.chase_saved_animating = self.animating
+        self.chase_saved_mask = self.get_letters_mask()
+        self.chase_saved_greenred = p[LED_GREENRED]
+
+        self.anim_id = self.anim_id + 1
+        var id = self.anim_id
+
+        self.stop_animation_timers()
+
+        self.animating = true
+        self.phase = 4
+        self.chase_pos = 0
+
+        self.all_off()
+
+        self.last_status = ""
+        self.publish_status()
+
+        self.chase_step(id)
+
+        tasmota.resp_cmnd_str("Chase started")
+    end
+
+    def chase_step(id)
+        if id != self.anim_id || self.phase != 4
+            return nil
+        end
+
+        self.letters_off()
+        tasmota.set_power(LED_GREENRED, false)
+
+        var led = self.chase_sequence[self.chase_pos]
+        tasmota.set_power(led, true)
+
+        self.chase_pos = self.chase_pos + 1
+
+        if self.chase_pos >= size(self.chase_sequence)
+            self.chase_pos = 0
+        end
+
+        tasmota.set_timer(
+            CHASE_STEP_MS,
+            / -> self.chase_step(id),
+            "sign_chase"
+        )
+    end
+
+    def cmd_chasestop()
+        if self.phase != 4
+            tasmota.resp_cmnd_str("Chase not running")
+            return
+        end
+
+        self.anim_id = self.anim_id + 1
+        tasmota.remove_timer("sign_chase")
+
+        self.phase = self.chase_saved_phase
+        self.animating = self.chase_saved_animating
+
+        self.set_letters_mask(self.chase_saved_mask)
+        tasmota.set_power(LED_GREENRED, self.chase_saved_greenred)
+
+        if self.phase == 1 && self.animating
+            var id = self.anim_id
+            self.random_step(id)
+        end
+
+        self.last_status = ""
+        self.publish_status()
+
+        tasmota.resp_cmnd_str("Chase stopped")
+    end
+
+
+    # GAME
+
+    def cmd_enable(cmd, idx, payload, payload_json)
+        self.anim_id = self.anim_id + 1
+
+        self.enabled = true
+        self.solved = false
+        self.animating = false
+        self.phase = 0
+
+        self.clear_input_state()
+        self.stop_animation_timers()
+        self.all_off()
+
+        self.start_random()
+
         tasmota.resp_cmnd_done()
     end
 
@@ -185,58 +377,36 @@ class Sign
         self.phase = 0
 
         self.clear_input_state()
+        self.stop_animation_timers()
         self.all_off()
-
-        tasmota.remove_timer("sign_intro")
-        tasmota.remove_timer("sign_glitch")
 
         self.last_status = ""
         self.publish_status()
+
         tasmota.resp_cmnd_done()
     end
 
-    def start_glitch(id)
-        if id != self.anim_id || !self.enabled || self.solved || self.phase != 1
-            return nil
-        end
-
-        self.phase = 2
-        self.glitch_pos = 0
-        self.clear_input_state()
-
-        tasmota.remove_timer("sign_intro")
-        self.publish_status()
-        self.glitch_step(id)
+    def cmd_random()
+        self.start_random()
+        tasmota.resp_cmnd_str("Random flicker started")
     end
 
-    def glitch_step(id)
-        if id != self.anim_id || !self.enabled || self.solved || self.phase != 2
-            return nil
+    def cmd_hardmode(cmd, idx, payload, payload_json)
+        if payload == "1"
+            self.hard_mode = true
+            tasmota.resp_cmnd_str("Hard mode ON")
+        elif payload == "0"
+            self.hard_mode = false
+            tasmota.resp_cmnd_str("Hard mode OFF")
+        else
+            if self.hard_mode
+                tasmota.resp_cmnd_str("Hard mode ON")
+            else
+                tasmota.resp_cmnd_str("Hard mode OFF")
+            end
         end
 
-        if self.glitch_pos >= size(self.glitch_masks)
-            self.finish_glitch(id)
-            return nil
-        end
-
-        self.set_letters_mask(self.glitch_masks[self.glitch_pos])
-
-        self.glitch_pos = self.glitch_pos + 1
-
-        tasmota.set_timer(GLITCH_STEP_MS, / -> self.glitch_step(id), "sign_glitch")
-    end
-
-    def finish_glitch(id)
-        if id != self.anim_id || !self.enabled || self.solved
-            return nil
-        end
-
-        self.phase = 3
-        self.animating = false
-        self.clear_input_state()
-        self.play_state()
-
-        mqtt.publish(self.mqtt_topic, '{"data":"LAMPOFF"}')
+        self.last_status = ""
         self.publish_status()
     end
 
@@ -247,18 +417,76 @@ class Sign
 
         var p = tasmota.get_power()
 
-        if p[LED1] && p[LED2] && p[LED3] && p[LED4] && p[LED5] && p[LED6]
+        if p[LED1] && p[LED2] && p[LED3] &&
+           p[LED4] && p[LED5] && p[LED6]
+
             self.solved = true
             self.enabled = false
             self.animating = false
             self.phase = 0
 
+            self.anim_id = self.anim_id + 1
+
             self.clear_input_state()
-            tasmota.remove_timer("sign_intro")
-            tasmota.remove_timer("sign_glitch")
+            self.stop_animation_timers()
 
             mqtt.publish(self.mqtt_topic, '{"data":"SOLVED"}')
+
+            self.last_status = ""
             self.publish_status()
+        end
+    end
+
+    def apply_input_normal(id)
+        if id == 1
+            self.toggle_led(LED2)
+
+        elif id == 2
+            self.toggle_led(LED4)
+            self.toggle_led(LED5)
+
+        elif id == 3
+            self.toggle_led(LED6)
+
+        elif id == 4
+            self.toggle_led(LED2)
+            self.toggle_led(LED3)
+
+        elif id == 5
+            self.toggle_led(LED4)
+
+        elif id == 6
+            self.toggle_led(LED1)
+            self.toggle_led(LED6)
+        end
+    end
+
+    def apply_input_hard(id)
+        if id == 1
+            self.toggle_led(LED3)
+
+        elif id == 2
+            self.toggle_led(LED2)
+            self.toggle_led(LED3)
+            self.toggle_led(LED6)
+
+        elif id == 3
+            self.toggle_led(LED1)
+            self.toggle_led(LED4)
+            self.toggle_led(LED5)
+
+        elif id == 4
+            self.toggle_led(LED1)
+            self.toggle_led(LED2)
+            self.toggle_led(LED6)
+
+        elif id == 5
+            self.toggle_led(LED3)
+            self.toggle_led(LED4)
+
+        elif id == 6
+            tasmota.set_power(LED2, false)
+            tasmota.set_power(LED5, false)
         end
     end
 
@@ -267,24 +495,14 @@ class Sign
             return nil
         end
 
-        if id == 1
-            self.toggle_led(LED2)
-        elif id == 2
-            self.toggle_led(LED4)
-            self.toggle_led(LED5)
-        elif id == 3
-            self.toggle_led(LED6)
-        elif id == 4
-            self.toggle_led(LED2)
-            self.toggle_led(LED3)
-        elif id == 5
-            self.toggle_led(LED4)
-        elif id == 6
-            self.toggle_led(LED1)
-            self.toggle_led(LED6)
+        if self.hard_mode
+            self.apply_input_hard(id)
+        else
+            self.apply_input_normal(id)
         end
 
         self.input_last[id] = tasmota.millis()
+
         self.check_solved()
         self.publish_status()
     end
@@ -294,7 +512,9 @@ class Sign
             return nil
         end
 
-        if self.input_pending[id] && self.input_token[id] == token
+        if self.input_pending[id] &&
+           self.input_token[id] == token
+
             self.input_pending[id] = false
             self.apply_input(id)
         end
@@ -305,28 +525,29 @@ class Sign
             return nil
         end
 
-        if !self.enabled || self.solved
-            return nil
-        end
-
         if self.phase == 1
-            self.start_glitch(self.anim_id)
-            return nil
+            var game_started = self.stop_random_for_input()
+
+            if !game_started
+                return nil
+            end
         end
 
-        if self.phase != 3
+        if !self.enabled || self.solved || self.phase != 3
             return nil
         end
 
         var now = tasmota.millis()
 
-        if self.input_last[id] != 0 && now - self.input_last[id] < INPUT_COOLDOWN_MS
+        if self.input_last[id] != 0 &&
+           now - self.input_last[id] < INPUT_COOLDOWN_MS
             return nil
         end
 
         if self.input_pending[id]
             self.input_pending[id] = false
             self.input_token[id] = self.input_token[id] + 1
+
             self.apply_input(id)
             return nil
         end
@@ -336,27 +557,38 @@ class Sign
 
         var token = self.input_token[id]
 
-        tasmota.set_timer(SENSOR_HOLD_MS, / -> self.finalize_input(id, token))
+        tasmota.set_timer(
+            SENSOR_HOLD_MS,
+            / -> self.finalize_input(id, token)
+        )
     end
 
     def force_complete()
         self.anim_id = self.anim_id + 1
+
         self.enabled = false
         self.solved = true
         self.animating = false
         self.phase = 0
+
         self.clear_input_state()
-        tasmota.remove_timer("sign_intro")
-        tasmota.remove_timer("sign_glitch")
+        self.stop_animation_timers()
+
+        self.all_off()
         self.letters_on()
+
         mqtt.publish(self.mqtt_topic, '{"data":"SOLVED"}')
+
         self.last_status = ""
         self.publish_status()
-        tasmota.resp_cmnd("Sign force completed")
+
+        tasmota.resp_cmnd_str("Sign force completed")
     end
 
-    def every_50ms()
-        self.publish_status()
+    def every_250ms()
+        if !self.animating
+            self.publish_status()
+        end
     end
 
     def any_key(cmd, idx)
@@ -367,6 +599,7 @@ class Sign
                 self.toggle_led(LED_GREENRED)
                 self.publish_status()
             end
+
             return nil
         end
 
@@ -374,17 +607,60 @@ class Sign
     end
 end
 
+
 var sign_driver = Sign()
 
 tasmota.add_driver(sign_driver)
-tasmota.add_cmd("enable", / cmd, idx, payload, payload_json -> sign_driver.cmd_enable(cmd, idx, payload, payload_json))
-tasmota.add_cmd("disable", / cmd, idx, payload, payload_json -> sign_driver.cmd_disable(cmd, idx, payload, payload_json))
-tasmota.add_cmd("forcecomplete", / -> sign_driver.force_complete())
+
+tasmota.add_cmd(
+    "enable",
+    / cmd, idx, payload, payload_json ->
+        sign_driver.cmd_enable(cmd, idx, payload, payload_json)
+)
+
+tasmota.add_cmd(
+    "disable",
+    / cmd, idx, payload, payload_json ->
+        sign_driver.cmd_disable(cmd, idx, payload, payload_json)
+)
+
+tasmota.add_cmd(
+    "forcecomplete",
+    / -> sign_driver.force_complete()
+)
+
+tasmota.add_cmd(
+    "randomblink",
+    / -> sign_driver.cmd_random()
+)
+
+tasmota.add_cmd(
+    "chase",
+    / -> sign_driver.cmd_chase()
+)
+
+tasmota.add_cmd(
+    "chasestop",
+    / -> sign_driver.cmd_chasestop()
+)
+
+tasmota.add_cmd(
+    "hardmode",
+    / cmd, idx, payload, payload_json ->
+        sign_driver.cmd_hardmode(cmd, idx, payload, payload_json)
+)
+
 
 print("Sign driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
-print("enable - game enabled from clean state")
-print("disable - game disabled and fully reset")
-print("forcecomplete - all letters on and SOLVED event")
+print("enable - enable game and start random flicker")
+print("disable - disable game, reset and stop all animations")
+print("forcecomplete - turn all letters on and send SOLVED")
+print("randomblink - start random flicker")
+print("chase - start continuous back-and-forth animation")
+print("chasestop - stop chase animation")
+print("hardmode 1 - enable hard mode")
+print("hardmode 0 - enable original mode")
+print("hardmode - show current mode")
 print("--------------------------------------------------------------")
