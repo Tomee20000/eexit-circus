@@ -11,7 +11,7 @@ switchmode0 2
 
 import mqtt
 
-var HARD_MODE = true
+var HARD_MODE = false
 
 var LED1 = 0 # C1 32
 var LED2 = 1 # I 33

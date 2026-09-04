@@ -4,7 +4,7 @@ import mqtt
 var SERIAL_RX = 16
 var SERIAL_TX = 17
 var SERIAL_BAUD = 9600
-var SERIAL_MODE = serial.SERIAL_8E1
+var SERIAL_MODE = serial.SERIAL_8N1
 
 var WS2812_PIN = 3
 var LED_COUNT = 46
@@ -28,6 +28,15 @@ var LDR_LOCK_MS = 250
 var ANIM_INTERVAL_MS = 40
 var BLINK_INTERVAL_MS = 250
 var SHOT_TIME = 5000
+
+var SOLVED_FRAME_MS = 35
+var SOLVED_FLASH_TIME_MS = 1000
+var SOLVED_SPLASH_TIME_MS = 4500
+var SOLVED_FADE_TIME_MS = 4500
+var SOLVED_TOTAL_TIME_MS =
+    SOLVED_FLASH_TIME_MS +
+    SOLVED_SPLASH_TIME_MS +
+    SOLVED_FADE_TIME_MS
 
 var WAVE_SPEED = 0.15
 var WAVE_LENGTH = 3
@@ -57,6 +66,27 @@ var duck_led_map = {
     4: [36,37,38,39,40,41,42,43]
 }
 
+def send_duck_cmd(idx, action)
+    serial_port.write(
+        bytes().fromstring(
+            "duck" .. idx .. " " .. action .. "\n"
+        )
+    )
+end
+
+def send_broadcast_cmd(action)
+    serial_port.write(
+        bytes().fromstring(action .. "\n")
+    )
+end
+
+def force_status_publish()
+    if wave_driver != nil
+        wave_driver.last_status = ""
+        wave_driver.publish_status()
+    end
+end
+
 def duck_command(cmd, idx, payload, payload_json)
     payload += "\n"
     serial_port.write(bytes().fromstring(payload))
@@ -71,8 +101,10 @@ tasmota.add_cmd(
 
 class DuckMoveWatchdog
 
-    var wanted, has_moved, recovering
-    var home_requested
+    var wanted, has_moved
+    var homing, recovering, pending_move
+    var home_confirmed
+    var moveall_pending
     var move_cmd_ms, low_since
     var home_cmd_ms, home_seen_high, home_low_since
     var next_check_ms
@@ -80,8 +112,13 @@ class DuckMoveWatchdog
     def init()
         self.wanted = [false, false, false, false]
         self.has_moved = [false, false, false, false]
+
+        self.homing = [false, false, false, false]
         self.recovering = [false, false, false, false]
-        self.home_requested = [false, false, false, false]
+        self.pending_move = [false, false, false, false]
+
+        self.home_confirmed = [false, false, false, false]
+        self.moveall_pending = false
 
         self.move_cmd_ms = [0, 0, 0, 0]
         self.low_since = [0, 0, 0, 0]
@@ -100,11 +137,7 @@ class DuckMoveWatchdog
     end
 
     def write_duck(idx, cmd)
-        serial_port.write(
-            bytes().fromstring(
-                "duck" .. idx .. " " .. cmd .. "\n"
-            )
-        )
+        send_duck_cmd(idx, cmd)
     end
 
     def read_move(i)
@@ -117,20 +150,33 @@ class DuckMoveWatchdog
         return moving
     end
 
-    def start_duck(idx)
-        if idx < 1 || idx > 4
-            return
+    def is_down(idx)
+        if wave_driver == nil
+            return false
         end
 
-        var i = idx - 1
-        var now = tasmota.millis()
+        return wave_driver.duck_is_down(idx)
+    end
 
-        self.wanted[i] = true
+    def all_home_confirmed()
+        for i: 0..3
+            if !self.home_confirmed[i]
+                return false
+            end
+        end
+
+        return true
+    end
+
+    def reset_motion_state(i)
+        self.wanted[i] = false
         self.has_moved[i] = false
-        self.recovering[i] = false
-        self.home_requested[i] = false
 
-        self.move_cmd_ms[i] = now
+        self.homing[i] = false
+        self.recovering[i] = false
+        self.pending_move[i] = false
+
+        self.move_cmd_ms[i] = 0
         self.low_since[i] = 0
 
         self.home_cmd_ms[i] = 0
@@ -138,9 +184,163 @@ class DuckMoveWatchdog
         self.home_low_since[i] = 0
     end
 
-    def start_all()
+    def begin_home(idx, move_after_home, recovery_mode)
+        if idx < 1 || idx > 4
+            return
+        end
+
+        var i = idx - 1
+        var now = tasmota.millis()
+
+        self.wanted[i] = false
+        self.has_moved[i] = false
+
+        self.homing[i] = true
+        self.recovering[i] = recovery_mode
+        self.pending_move[i] = move_after_home
+
+        self.home_confirmed[i] = false
+
+        self.move_cmd_ms[i] = 0
+        self.low_since[i] = 0
+
+        self.home_cmd_ms[i] = now
+        self.home_seen_high[i] = false
+        self.home_low_since[i] = 0
+    end
+
+    def request_home(idx, move_after_home)
+        if idx < 1 || idx > 4
+            return
+        end
+
+        if self.is_down(idx)
+            self.stop_duck(idx)
+            return
+        end
+
+        self.begin_home(idx, move_after_home, false)
+        self.write_duck(idx, "home")
+
+        print("Duck" .. idx .. " homing requested")
+        force_status_publish()
+    end
+
+    def request_home_all()
+        self.moveall_pending = false
+
         for idx: 1..4
-            self.start_duck(idx)
+            if !self.is_down(idx)
+                self.begin_home(idx, false, false)
+            end
+        end
+
+        send_broadcast_cmd("homeall")
+
+        print("All ducks homing requested")
+        force_status_publish()
+    end
+
+    def prepare_home_all_for_moveall()
+        self.moveall_pending = true
+
+        for idx: 1..4
+            if !self.is_down(idx)
+                self.begin_home(idx, false, false)
+            end
+        end
+
+        send_broadcast_cmd("homeall")
+
+        print("Moveall waiting for all ducks to home")
+        force_status_publish()
+    end
+
+    def send_single_move(idx)
+        if idx < 1 || idx > 4
+            return false
+        end
+
+        if self.is_down(idx)
+            self.stop_duck(idx)
+            return false
+        end
+
+        var i = idx - 1
+        var now = tasmota.millis()
+
+        if !self.home_confirmed[i]
+            print("Duck" .. idx .. " move rejected, not home")
+            force_status_publish()
+            return false
+        end
+
+        self.write_duck(idx, "move")
+
+        self.wanted[i] = true
+        self.has_moved[i] = false
+
+        self.homing[i] = false
+        self.recovering[i] = false
+        self.pending_move[i] = false
+
+        self.home_confirmed[i] = false
+
+        self.move_cmd_ms[i] = now
+        self.low_since[i] = 0
+
+        self.home_cmd_ms[i] = 0
+        self.home_seen_high[i] = false
+        self.home_low_since[i] = 0
+
+        print("Duck" .. idx .. " moving from confirmed home")
+        force_status_publish()
+
+        return true
+    end
+
+    def dispatch_moveall()
+        var now = tasmota.millis()
+
+        self.moveall_pending = false
+
+        send_broadcast_cmd("moveall")
+
+        for i: 0..3
+            self.wanted[i] = true
+            self.has_moved[i] = false
+
+            self.homing[i] = false
+            self.recovering[i] = false
+            self.pending_move[i] = false
+
+            self.home_confirmed[i] = false
+
+            self.move_cmd_ms[i] = now
+            self.low_since[i] = 0
+
+            self.home_cmd_ms[i] = 0
+            self.home_seen_high[i] = false
+            self.home_low_since[i] = 0
+        end
+
+        if wave_driver != nil && !wave_driver.enabled
+            wave_driver.enable_game()
+        end
+
+        print("Moveall broadcast sent")
+        force_status_publish()
+    end
+
+    def request_move(idx)
+        return self.send_single_move(idx)
+    end
+
+    def request_move_all()
+        if self.all_home_confirmed()
+            self.dispatch_moveall()
+        else
+            self.prepare_home_all_for_moveall()
         end
     end
 
@@ -151,10 +351,56 @@ class DuckMoveWatchdog
 
         var i = idx - 1
 
+        self.reset_motion_state(i)
+        self.home_confirmed[i] = false
+
+        force_status_publish()
+    end
+
+    def stop_all()
+        self.moveall_pending = false
+
+        for i: 0..3
+            self.reset_motion_state(i)
+            self.home_confirmed[i] = false
+        end
+
+        force_status_publish()
+    end
+
+    def start_recovery(idx)
+        if idx < 1 || idx > 4
+            return
+        end
+
+        if self.is_down(idx)
+            self.stop_duck(idx)
+            return
+        end
+
+        self.begin_home(idx, true, true)
+        self.write_duck(idx, "home")
+
+        print("Duck" .. idx .. " stopped outside cycle, recovery homing")
+        force_status_publish()
+    end
+
+    def finish_home(idx)
+        if idx < 1 || idx > 4
+            return
+        end
+
+        var i = idx - 1
+        var should_move = self.pending_move[i]
+
+        self.homing[i] = false
+        self.recovering[i] = false
+        self.pending_move[i] = false
+
         self.wanted[i] = false
         self.has_moved[i] = false
-        self.recovering[i] = false
-        self.home_requested[i] = false
+
+        self.home_confirmed[i] = true
 
         self.move_cmd_ms[i] = 0
         self.low_since[i] = 0
@@ -162,82 +408,20 @@ class DuckMoveWatchdog
         self.home_cmd_ms[i] = 0
         self.home_seen_high[i] = false
         self.home_low_since[i] = 0
-    end
 
-    def stop_all()
-        for idx: 1..4
-            self.stop_duck(idx)
+        print("Duck" .. idx .. " home confirmed")
+        force_status_publish()
+
+        if should_move
+            self.send_single_move(idx)
+        end
+
+        if self.moveall_pending && self.all_home_confirmed()
+            self.dispatch_moveall()
         end
     end
 
-    def mark_home(idx)
-        if idx < 1 || idx > 4
-            return
-        end
-
-        var i = idx - 1
-        self.stop_duck(idx)
-        self.home_requested[i] = true
-    end
-
-    def mark_home_all()
-        for idx: 1..4
-            self.mark_home(idx)
-        end
-    end
-
-    def resend_move(idx)
-        var i = idx - 1
-        var now = tasmota.millis()
-
-        self.write_duck(idx, "move")
-
-        self.wanted[i] = true
-        self.has_moved[i] = false
-        self.recovering[i] = false
-        self.home_requested[i] = false
-        self.move_cmd_ms[i] = now
-        self.low_since[i] = 0
-
-        print("Duck" .. idx .. " move retry")
-    end
-
-    def start_recovery(idx)
-        var i = idx - 1
-        var now = tasmota.millis()
-
-        self.write_duck(idx, "home")
-
-        self.recovering[i] = true
-        self.home_cmd_ms[i] = now
-        self.home_seen_high[i] = false
-        self.home_low_since[i] = 0
-        self.low_since[i] = 0
-
-        print("Duck" .. idx .. " stopped, homing")
-    end
-
-    def finish_recovery(idx)
-        var i = idx - 1
-        var now = tasmota.millis()
-
-        self.write_duck(idx, "move")
-
-        self.recovering[i] = false
-        self.wanted[i] = true
-        self.has_moved[i] = false
-        self.home_requested[i] = false
-        self.move_cmd_ms[i] = now
-        self.low_since[i] = 0
-
-        self.home_cmd_ms[i] = 0
-        self.home_seen_high[i] = false
-        self.home_low_since[i] = 0
-
-        print("Duck" .. idx .. " homing done, moving")
-    end
-
-    def handle_recovery(i, idx, moving, now)
+    def handle_home(i, idx, moving, now)
         if moving
             self.home_seen_high[i] = true
             self.home_low_since[i] = 0
@@ -246,7 +430,7 @@ class DuckMoveWatchdog
 
         if !self.home_seen_high[i]
             if now - self.home_cmd_ms[i] >= HOME_START_TIMEOUT_MS
-                self.finish_recovery(idx)
+                self.finish_home(idx)
             end
 
             return
@@ -257,7 +441,7 @@ class DuckMoveWatchdog
         end
 
         if now - self.home_low_since[i] >= HOME_LOW_STABLE_MS
-            self.finish_recovery(idx)
+            self.finish_home(idx)
         end
     end
 
@@ -274,13 +458,13 @@ class DuckMoveWatchdog
             var idx = i + 1
             var moving = self.read_move(i)
 
-            if wave_driver != nil && wave_driver.duck_is_down(idx)
-                self.stop_duck(idx)
+            if self.is_down(idx)
+                self.reset_motion_state(i)
                 continue
             end
 
-            if self.recovering[i]
-                self.handle_recovery(i, idx, moving, now)
+            if self.homing[i]
+                self.handle_home(i, idx, moving, now)
                 continue
             end
 
@@ -307,11 +491,7 @@ class DuckMoveWatchdog
                 continue
             end
 
-            if self.has_moved[i]
-                self.start_recovery(idx)
-            else
-                self.resend_move(idx)
-            end
+            self.start_recovery(idx)
         end
     end
 end
@@ -320,73 +500,58 @@ class DuckGameDriver
 
     def home(cmd, idx)
         if duck_move_watchdog != nil
-            duck_move_watchdog.mark_home(idx)
+            duck_move_watchdog.request_home(idx, false)
+        else
+            send_duck_cmd(idx, "home")
         end
 
-        serial_port.write(
-            bytes().fromstring("duck" .. idx .. " home\n")
-        )
-
-        if wave_driver != nil
-            wave_driver.last_status = ""
-            wave_driver.publish_status()
-        end
-
+        force_status_publish()
         tasmota.resp_cmnd("duck" .. idx .. " homing")
     end
 
     def home_all(cmd, idx)
         if duck_move_watchdog != nil
-            duck_move_watchdog.mark_home_all()
+            duck_move_watchdog.request_home_all()
+        else
+            send_broadcast_cmd("homeall")
         end
 
-        serial_port.write(
-            bytes().fromstring("homeall\n")
-        )
-
-        if wave_driver != nil
-            wave_driver.last_status = ""
-            wave_driver.publish_status()
-        end
-
+        force_status_publish()
         tasmota.resp_cmnd("homing all")
     end
 
     def move(cmd, idx)
-        serial_port.write(
-            bytes().fromstring("duck" .. idx .. " move\n")
-        )
+        var ok = false
 
         if duck_move_watchdog != nil
-            duck_move_watchdog.start_duck(idx)
+            ok = duck_move_watchdog.request_move(idx)
+        else
+            send_duck_cmd(idx, "move")
+            ok = true
         end
 
-        if wave_driver != nil
-            wave_driver.last_status = ""
-            wave_driver.publish_status()
-        end
+        force_status_publish()
 
-        tasmota.resp_cmnd("duck" .. idx .. " moving")
+        if ok
+            tasmota.resp_cmnd("duck" .. idx .. " moving")
+        else
+            tasmota.resp_cmnd("duck" .. idx .. " move rejected, not home")
+        end
     end
 
     def move_all(cmd, idx)
-        serial_port.write(
-            bytes().fromstring("moveall\n")
-        )
-
-        tasmota.cmd("ledinit")
-        tasmota.cmd("enable")
+        if wave_driver != nil
+            wave_driver.led_init()
+        end
 
         if duck_move_watchdog != nil
-            duck_move_watchdog.start_all()
+            duck_move_watchdog.request_move_all()
+        else
+            send_broadcast_cmd("moveall")
         end
 
-        if wave_driver != nil
-            wave_driver.last_status = ""
-            wave_driver.publish_status()
-        end
-
-        tasmota.resp_cmnd("moving all")
+        force_status_publish()
+        tasmota.resp_cmnd("safe moveall requested")
     end
 
     def stop(cmd, idx)
@@ -394,15 +559,9 @@ class DuckGameDriver
             duck_move_watchdog.stop_duck(idx)
         end
 
-        serial_port.write(
-            bytes().fromstring("duck" .. idx .. " stop\n")
-        )
+        send_duck_cmd(idx, "stop")
 
-        if wave_driver != nil
-            wave_driver.last_status = ""
-            wave_driver.publish_status()
-        end
-
+        force_status_publish()
         tasmota.resp_cmnd("duck" .. idx .. " stopped")
     end
 
@@ -411,15 +570,9 @@ class DuckGameDriver
             duck_move_watchdog.stop_all()
         end
 
-        serial_port.write(
-            bytes().fromstring("stopall\n")
-        )
+        send_broadcast_cmd("stopall")
 
-        if wave_driver != nil
-            wave_driver.last_status = ""
-            wave_driver.publish_status()
-        end
-
+        force_status_publish()
         tasmota.resp_cmnd("all stopped")
     end
 
@@ -428,9 +581,8 @@ class DuckGameDriver
             duck_move_watchdog.stop_duck(idx)
         end
 
-        serial_port.write(
-            bytes().fromstring("duck" .. idx .. " restart\n")
-        )
+        send_duck_cmd(idx, "restart")
+        force_status_publish()
         tasmota.resp_cmnd("duck" .. idx .. " restarting")
     end
 
@@ -441,11 +593,7 @@ class DuckGameDriver
             return
         end
 
-        serial_port.write(
-            bytes().fromstring(
-                "duck" .. idx .. " speed " .. speed .. "\n"
-            )
-        )
+        send_duck_cmd(idx, "speed " .. speed)
 
         tasmota.resp_cmnd(
             "duck" .. idx .. " speed set to " .. speed
@@ -462,6 +610,9 @@ class WaveDriver
     var ldr_latched, ldr_off_since, ldr_lock_until
     var ldr_debug
     var solved
+    var solved_anim
+    var solved_anim_start_ms
+    var next_solved_ms
     var last_status
     var reset_id
 
@@ -472,39 +623,19 @@ class WaveDriver
         self.next_anim_ms = 0
         self.next_blink_ms = 0
         self.solved = false
+        self.solved_anim = false
+        self.solved_anim_start_ms = 0
+        self.next_solved_ms = 0
         self.last_status = ""
         self.reset_id = 0
 
-        self.duck_anim = [
-            false,
-            false,
-            false,
-            false
-        ]
+        self.duck_anim = [false, false, false, false]
+        self.duck_red = [false, false, false, false]
 
-        self.duck_red = [
-            false,
-            false,
-            false,
-            false
-        ]
-
-        self.ldr_latched = [
-            false,
-            false,
-            false,
-            false
-        ]
-
+        self.ldr_latched = [false, false, false, false]
         self.ldr_off_since = [0, 0, 0, 0]
         self.ldr_lock_until = [0, 0, 0, 0]
-
-        self.ldr_debug = [
-            false,
-            false,
-            false,
-            false
-        ]
+        self.ldr_debug = [false, false, false, false]
 
         for i: 0..3
             if LDR_USE_PULLUP
@@ -542,37 +673,74 @@ class WaveDriver
             return "shot_animation"
         elif self.duck_red[i]
             return "shot"
-        elif duck_move_watchdog != nil && duck_move_watchdog.home_requested[i]
-            return "home"
+        elif duck_move_watchdog != nil && duck_move_watchdog.recovering[i]
+            return "recovering"
+        elif duck_move_watchdog != nil && duck_move_watchdog.homing[i]
+            return "homing"
         elif duck_move_watchdog != nil && duck_move_watchdog.wanted[i]
             return "moving"
+        elif duck_move_watchdog != nil && duck_move_watchdog.home_confirmed[i]
+            return "home"
+        elif duck_move_watchdog != nil && duck_move_watchdog.moveall_pending
+            return "waiting_for_moveall"
         end
-        return "stopped"
+
+        return "unknown"
+    end
+
+    def effect_state()
+        if self.solved_anim
+            return "solved_fadeout"
+        elif self.solved
+            return "solved"
+        elif self.enabled
+            return "running"
+        end
+
+        return "off"
     end
 
     def publish_status()
         var count = 0
+
         for i: 0..3
             if self.duck_red[i]
                 count = count + 1
             end
         end
+
         var text = str(count) .. " / 4 kacsa lelőve"
-        if !self.enabled
+
+        if self.solved_anim
+            text = "Megoldva - fény animáció"
+        elif self.solved
+            text = "Megoldva - 4 / 4 kacsa lelőve"
+        elif !self.enabled
             text = "Inaktív - " .. text
         end
 
-        var msg = '{"text":"' .. text .. '","shot_count":' .. count .. ',"total":4,"enabled":' .. (self.enabled ? "true" : "false") .. ',"solved":' .. (self.solved ? "true" : "false") .. ',"ducks":['
+        var moveall_waiting = "false"
+
+        if duck_move_watchdog != nil && duck_move_watchdog.moveall_pending
+            moveall_waiting = "true"
+        end
+
+        var msg = '{"text":"' .. text .. '","shot_count":' .. count .. ',"total":4,"enabled":' .. (self.enabled ? "true" : "false") .. ',"solved":' .. (self.solved ? "true" : "false") .. ',"effect":"' .. self.effect_state() .. '","moveall_waiting":' .. moveall_waiting .. ',"ducks":['
+
         for i: 0..3
             if i > 0
                 msg = msg .. ","
             end
+
             msg = msg .. '"' .. self.duck_state(i) .. '"'
         end
+
         msg = msg .. "]}"
+
         if msg == self.last_status
             return
         end
+
         self.last_status = msg
         mqtt.publish("CDUCKGAME/STATUS", msg, true)
     end
@@ -583,12 +751,16 @@ class WaveDriver
         if duck_move_watchdog != nil
             duck_move_watchdog.stop_all()
         end
-        serial_port.write(bytes().fromstring("stopall\n"))
+
+        send_broadcast_cmd("stopall")
+
         self.enabled = true
+
         for i: 0..3
             self.duck_anim[i] = false
             self.duck_red[i] = true
         end
+
         self.solved = false
         self.publish_status()
         self.check_solved()
@@ -615,7 +787,7 @@ class WaveDriver
     end
 
     def ldr_loop()
-        if !self.enabled
+        if !self.enabled || self.solved_anim
             return
         end
 
@@ -655,6 +827,11 @@ class WaveDriver
     def anim_loop()
         self.publish_status()
 
+        if self.solved_anim
+            self.solved_anim_loop()
+            return
+        end
+
         if !self.enabled
             return
         end
@@ -675,6 +852,18 @@ class WaveDriver
 
     def rgb(r, g, b)
         return (r << 16) | (g << 8) | b
+    end
+
+    def set_all_pixels(color, brightness)
+        for i: 0..(LED_COUNT - 1)
+            self.strip.set_pixel_color(
+                i,
+                color,
+                brightness
+            )
+        end
+
+        self.strip.show()
     end
 
     def set_duck_pixels(duck_id, color, brightness)
@@ -757,10 +946,138 @@ class WaveDriver
         self.time += WAVE_SPEED
     end
 
+    def start_solved_animation()
+        self.solved_anim = true
+        self.solved_anim_start_ms = tasmota.millis()
+        self.next_solved_ms = 0
+        self.enabled = true
+        self.blink_state = false
+        self.time = 0
+
+        self.last_status = ""
+        self.publish_status()
+    end
+
+    def solved_flash_frame(elapsed)
+        var white = self.rgb(255, 255, 255)
+        var cycle = int(elapsed / 125)
+
+        if cycle % 2 == 0
+            self.set_all_pixels(white, 255)
+        else
+            self.set_all_pixels(white, 0)
+        end
+    end
+
+    def solved_splash_frame(elapsed)
+        var phase = int(elapsed / SOLVED_FRAME_MS)
+        var white = self.rgb(255, 255, 255)
+
+        for i: 0..(LED_COUNT - 1)
+            var wave = math.sin(
+                (i / 2.2) + (phase * 0.35)
+            )
+
+            var level = (wave + 1) / 2
+            var brightness = 35 + (level * 180)
+
+            var sparkle = (i * 17 + phase * 11) % 29
+
+            if sparkle == 0 || sparkle == 1
+                brightness = 255
+            end
+
+            if brightness > 255
+                brightness = 255
+            end
+
+            self.strip.set_pixel_color(
+                i,
+                white,
+                int(brightness)
+            )
+        end
+
+        self.strip.show()
+    end
+
+    def solved_fade_frame(elapsed)
+        var white = self.rgb(255, 255, 255)
+        var remaining = SOLVED_FADE_TIME_MS - elapsed
+
+        if remaining < 0
+            remaining = 0
+        end
+
+        var base = int((remaining * 255) / SOLVED_FADE_TIME_MS)
+        var phase = int(elapsed / SOLVED_FRAME_MS)
+
+        for i: 0..(LED_COUNT - 1)
+            var wave = math.sin(
+                (i / 3.0) + (phase * 0.12)
+            )
+
+            var level = (wave + 1) / 2
+            var brightness = int(base * (0.35 + level * 0.65))
+
+            if brightness < 0
+                brightness = 0
+            end
+
+            self.strip.set_pixel_color(
+                i,
+                white,
+                brightness
+            )
+        end
+
+        self.strip.show()
+    end
+
+    def solved_anim_loop()
+        var now = tasmota.millis()
+
+        if now < self.next_solved_ms
+            return
+        end
+
+        self.next_solved_ms = now + SOLVED_FRAME_MS
+
+        var elapsed = now - self.solved_anim_start_ms
+
+        if elapsed >= SOLVED_TOTAL_TIME_MS
+            self.solved_anim = false
+            self.enabled = false
+            self.strip.clear()
+            self.strip.show()
+
+            self.last_status = ""
+            self.publish_status()
+            return
+        end
+
+        if elapsed < SOLVED_FLASH_TIME_MS
+            self.solved_flash_frame(elapsed)
+        elif elapsed < SOLVED_FLASH_TIME_MS + SOLVED_SPLASH_TIME_MS
+            self.solved_splash_frame(
+                elapsed - SOLVED_FLASH_TIME_MS
+            )
+        else
+            self.solved_fade_frame(
+                elapsed -
+                SOLVED_FLASH_TIME_MS -
+                SOLVED_SPLASH_TIME_MS
+            )
+        end
+    end
+
     def enable_game()
         self.reset_id = self.reset_id + 1
         self.enabled = true
         self.solved = false
+        self.solved_anim = false
+        self.solved_anim_start_ms = 0
+        self.next_solved_ms = 0
         self.next_anim_ms = 0
         self.next_blink_ms = 0
         self.last_status = ""
@@ -772,6 +1089,9 @@ class WaveDriver
     def disable_game()
         self.reset_id = self.reset_id + 1
         self.enabled = false
+        self.solved_anim = false
+        self.solved_anim_start_ms = 0
+        self.next_solved_ms = 0
         self.time = 0
         self.blink_state = false
         self.next_anim_ms = 0
@@ -786,11 +1106,16 @@ class WaveDriver
         self.ldr_debug = [false, false, false, false]
 
         if duck_move_watchdog != nil
-            duck_move_watchdog.mark_home_all()
+            duck_move_watchdog.stop_all()
         end
 
-        serial_port.write(bytes().fromstring("stopall\n"))
-        serial_port.write(bytes().fromstring("homeall\n"))
+        send_broadcast_cmd("stopall")
+
+        if duck_move_watchdog != nil
+            duck_move_watchdog.request_home_all()
+        else
+            send_broadcast_cmd("homeall")
+        end
 
         self.strip.clear()
         self.strip.show()
@@ -826,8 +1151,7 @@ class WaveDriver
                 SOLVED_PAYLOAD
             )
 
-            self.last_status = ""
-            self.publish_status()
+            self.start_solved_animation()
         end
     end
 
@@ -857,6 +1181,8 @@ class WaveDriver
            self.duck_red[idx - 1]
             return
         end
+
+        send_duck_cmd(idx, "shot")
 
         if duck_move_watchdog != nil
             duck_move_watchdog.stop_duck(idx)
@@ -898,19 +1224,13 @@ class WaveDriver
 
     def led_reset()
         self.reset_id = self.reset_id + 1
-        self.duck_anim = [
-            false,
-            false,
-            false,
-            false
-        ]
 
-        self.duck_red = [
-            false,
-            false,
-            false,
-            false
-        ]
+        self.solved_anim = false
+        self.solved_anim_start_ms = 0
+        self.next_solved_ms = 0
+
+        self.duck_anim = [false, false, false, false]
+        self.duck_red = [false, false, false, false]
 
         self.solved = false
         self.blink_state = false
@@ -932,40 +1252,20 @@ class WaveDriver
         self.reset_id = self.reset_id + 1
         self.enabled = false
         self.solved = false
+        self.solved_anim = false
+        self.solved_anim_start_ms = 0
+        self.next_solved_ms = 0
         self.blink_state = false
         self.next_anim_ms = 0
         self.next_blink_ms = 0
 
-        self.duck_anim = [
-            false,
-            false,
-            false,
-            false
-        ]
+        self.duck_anim = [false, false, false, false]
+        self.duck_red = [false, false, false, false]
 
-        self.duck_red = [
-            false,
-            false,
-            false,
-            false
-        ]
-
-        self.ldr_latched = [
-            false,
-            false,
-            false,
-            false
-        ]
-
+        self.ldr_latched = [false, false, false, false]
         self.ldr_off_since = [0, 0, 0, 0]
         self.ldr_lock_until = [0, 0, 0, 0]
-
-        self.ldr_debug = [
-            false,
-            false,
-            false,
-            false
-        ]
+        self.ldr_debug = [false, false, false, false]
 
         self.strip.clear()
         self.strip.show()
@@ -1086,8 +1386,8 @@ print("--------------------------------------------------------------")
 print("Command example: home1 - duck1 start homing")
 print("home<n> - start homing for the selected duck")
 print("homeall - start homing for all ducks")
-print("move<n> - start moving the selected duck up and down")
-print("moveall - start moving all ducks up and down")
+print("move<n> - move only if duck is confirmed home")
+print("moveall - home all first if needed, then send broadcast moveall")
 print("stop<n> - stop movement of the selected duck")
 print("stopall - stop movement of all ducks")
 print("duckrestart - restart the ESP32-C3 SuperMini")
@@ -1100,13 +1400,16 @@ print("enable - enable LED animation system")
 print("disable - clear game, stop timers and home all ducks")
 print("ledinit - reset LED state and internal flags")
 print("ledreset - clear shot/red LED states")
-print("duckshoot<n> - start red blinking animation behind duck<n> for 5 seconds")
+print("duckshoot<n> - manual shot command for duck<n>")
 print("ldrstatus - show current LDR raw hit states")
+print("solved effect - white splash, then slow fade to off")
 print("--------------------------------------------------------------")
 
 print("Duck move watchdog loaded")
 print("Duck move pins: duck1=32 duck2=33 duck3=25 duck4=26")
 print("HIGH=moving LOW=stopped")
+print("Single move is rejected if duck is not confirmed home")
+print("Moveall keeps original C++ delayed start")
 print("--------------------------------------------------------------")
 
 tasmota.cmd("homeall")

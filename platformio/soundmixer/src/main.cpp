@@ -4,11 +4,11 @@
 #define BUTTON_CC_PIN 7
 #define RELAY_PIN     4
 
-// Ha a reléd LOW-ra kapcsol be, cseréld meg ezt a kettőt.
 #define RELAY_ON  HIGH
 #define RELAY_OFF LOW
 
 const unsigned long DEBOUNCE_MS = 30;
+const unsigned long STATE_INTERVAL_MS = 1000;
 
 enum ActiveButton {
     NONE,
@@ -18,26 +18,45 @@ enum ActiveButton {
 
 ActiveButton activeButton = NONE;
 
-
-// ----- HH debounce -----
-
-bool hhRaw = HIGH;
-bool hhStable = HIGH;
+bool hhRaw;
+bool hhStable;
+bool hhPrevious;
 unsigned long hhLastChange = 0;
 
-
-// ----- CC debounce -----
-
-bool ccRaw = HIGH;
-bool ccStable = HIGH;
+bool ccRaw;
+bool ccStable;
+bool ccPrevious;
 unsigned long ccLastChange = 0;
+
+bool controlsArmed = false;
+unsigned long lastStateSend = 0;
+
+
+void sendState()
+{
+    switch (activeButton)
+    {
+        case HH:
+            Serial.println("STATE:HH");
+            break;
+
+        case CC:
+            Serial.println("STATE:CC");
+            break;
+
+        default:
+            Serial.println("STATE:NONE");
+            break;
+    }
+
+    lastStateSend = millis();
+}
 
 
 void updateButtons()
 {
     unsigned long now = millis();
 
-    // HH
     bool newHH = digitalRead(BUTTON_HH_PIN);
 
     if (newHH != hhRaw) {
@@ -49,8 +68,6 @@ void updateButtons()
         hhStable = hhRaw;
     }
 
-
-    // CC
     bool newCC = digitalRead(BUTTON_CC_PIN);
 
     if (newCC != ccRaw) {
@@ -71,18 +88,18 @@ void startHH()
     digitalWrite(RELAY_PIN, RELAY_ON);
 
     Serial.println("HH_DOWN");
-    Serial.flush();
+    sendState();
 }
 
 
 void stopHH()
 {
-    Serial.println("HH_UP");
-    Serial.flush();
-
     digitalWrite(RELAY_PIN, RELAY_OFF);
 
     activeButton = NONE;
+
+    Serial.println("HH_UP");
+    sendState();
 }
 
 
@@ -93,18 +110,32 @@ void startCC()
     digitalWrite(RELAY_PIN, RELAY_ON);
 
     Serial.println("CC_DOWN");
-    Serial.flush();
+    sendState();
 }
 
 
 void stopCC()
 {
-    Serial.println("CC_UP");
-    Serial.flush();
-
     digitalWrite(RELAY_PIN, RELAY_OFF);
 
     activeButton = NONE;
+
+    Serial.println("CC_UP");
+    sendState();
+}
+
+
+void processSerial()
+{
+    while (Serial.available())
+    {
+        String command = Serial.readStringUntil('\n');
+        command.trim();
+
+        if (command == "GET_STATE") {
+            sendState();
+        }
+    }
 }
 
 
@@ -113,54 +144,91 @@ void setup()
     pinMode(BUTTON_HH_PIN, INPUT_PULLUP);
     pinMode(BUTTON_CC_PIN, INPUT_PULLUP);
 
-    pinMode(RELAY_PIN, OUTPUT);
     digitalWrite(RELAY_PIN, RELAY_OFF);
+    pinMode(RELAY_PIN, OUTPUT);
+
+    hhRaw = digitalRead(BUTTON_HH_PIN);
+    hhStable = hhRaw;
+    hhPrevious = hhStable;
+    hhLastChange = millis();
+
+    ccRaw = digitalRead(BUTTON_CC_PIN);
+    ccStable = ccRaw;
+    ccPrevious = ccStable;
+    ccLastChange = millis();
 
     Serial.begin(115200);
 
     delay(1000);
 
     Serial.println("READY");
+    sendState();
 }
 
 
 void loop()
 {
     updateButtons();
+    processSerial();
 
-    switch (activeButton)
+    bool hhPressed =
+        (hhStable == LOW && hhPrevious == HIGH);
+
+    bool hhReleased =
+        (hhStable == HIGH && hhPrevious == LOW);
+
+    bool ccPressed =
+        (ccStable == LOW && ccPrevious == HIGH);
+
+    bool ccReleased =
+        (ccStable == HIGH && ccPrevious == LOW);
+
+    if (!controlsArmed)
     {
-        case NONE:
+        if (hhStable == HIGH && ccStable == HIGH)
+        {
+            controlsArmed = true;
+            Serial.println("BUTTONS_READY");
+        }
+    }
+    else
+    {
+        switch (activeButton)
+        {
+            case NONE:
 
-            // HH elsőbbséget kap, ha pontosan egyszerre nyomják meg őket
-            if (hhStable == LOW) {
-                startHH();
-            }
-            else if (ccStable == LOW) {
-                startCC();
-            }
+                if (hhPressed) {
+                    startHH();
+                }
+                else if (ccPressed) {
+                    startCC();
+                }
 
-            break;
+                break;
 
+            case HH:
 
-        case HH:
+                if (hhReleased) {
+                    stopHH();
+                }
 
-            // HH gomb felengedve
-            if (hhStable == HIGH) {
-                stopHH();
-            }
+                break;
 
-            break;
+            case CC:
 
+                if (ccReleased) {
+                    stopCC();
+                }
 
-        case CC:
+                break;
+        }
+    }
 
-            // CC gomb felengedve
-            if (ccStable == HIGH) {
-                stopCC();
-            }
+    hhPrevious = hhStable;
+    ccPrevious = ccStable;
 
-            break;
+    if ((millis() - lastStateSend) >= STATE_INTERVAL_MS) {
+        sendState();
     }
 
     delay(1);

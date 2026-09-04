@@ -59,6 +59,24 @@ class Clowngame
         return WALL_POSITION[clown_idx]
     end
 
+    def expected()
+        return SOLUTION[self.step] - 1
+    end
+
+    def is_solved_clown(i)
+        if self.step <= 0
+            return false
+        end
+
+        for s: 0..(self.step - 1)
+            if SOLUTION[s] - 1 == i
+                return true
+            end
+        end
+
+        return false
+    end
+
     def publish_status()
         var text = ""
         var waiting = "none"
@@ -71,21 +89,20 @@ class Clowngame
         elif self.state == "win"
             text = "5/5 kész - Bohócos játék megoldva"
 
-        elif self.state == "demo" && self.active_clown != nil
+        elif self.state == "blinking" && self.active_clown != nil
             next_clown = self.expected() + 1
             wall_button = self.wall_position(self.expected())
             waiting = "nose"
 
             text = str(self.step) ..
-                   "/5 kész - Bemutató: " ..
+                   "/5 kész - " ..
                    str(self.active_clown + 1) ..
-                   ". bohóc villog - következő helyes bohóc: " ..
-                   str(next_clown)
+                   ". bohóc villog"
 
         else
             next_clown = self.expected() + 1
             wall_button = self.wall_position(self.expected())
-            waiting = "button_or_nose"
+            waiting = "button"
 
             text = str(self.step) ..
                    "/5 kész - Következő: " ..
@@ -119,15 +136,6 @@ class Clowngame
         mqtt.publish("CCLOWNGAME/STATUS", msg, true)
     end
 
-    def force_complete()
-        self.enable = true
-        self.win()
-
-        tasmota.resp_cmnd(
-            "Clowngame force completed"
-        )
-    end
-
     def publish_eye_state(i, state)
         if self.last_eye_states[i] == state
             return
@@ -143,27 +151,23 @@ class Clowngame
     end
 
     def eye_on(i)
-        gpio.set_pwm(
-            self.eyes[i],
-            BRIGHTNESS
-        )
-
-        self.publish_eye_state(
-            i,
-            "ON"
-        )
+        gpio.set_pwm(self.eyes[i], BRIGHTNESS)
+        self.publish_eye_state(i, "ON")
     end
 
     def eye_off(i)
-        gpio.set_pwm(
-            self.eyes[i],
-            0
-        )
+        gpio.set_pwm(self.eyes[i], 0)
+        self.publish_eye_state(i, "OFF")
+    end
 
-        self.publish_eye_state(
-            i,
-            "OFF"
-        )
+    def show_solved()
+        if self.step <= 0
+            return nil
+        end
+
+        for s: 0..(self.step - 1)
+            self.eye_on(SOLUTION[s] - 1)
+        end
     end
 
     def every_50ms()
@@ -177,26 +181,15 @@ class Clowngame
         var ev_i = nil
 
         for i: 0..4
-            var bp = !gpio.digital_read(
-                self.buttons[i]
-            )
+            var bp = !gpio.digital_read(self.buttons[i])
+            var np = !gpio.digital_read(self.noses[i])
 
-            var np = !gpio.digital_read(
-                self.noses[i]
-            )
-
-            if ev == nil &&
-               bp &&
-               !self.last_buttons[i]
-
+            if ev == nil && bp && !self.last_buttons[i]
                 ev = "button"
                 ev_i = i
             end
 
-            if ev == nil &&
-               np &&
-               !self.last_noses[i]
-
+            if ev == nil && np && !self.last_noses[i]
                 ev = "nose"
                 ev_i = i
             end
@@ -211,24 +204,6 @@ class Clowngame
         elif ev == "nose"
             self.nose_pressed(ev_i)
         end
-    end
-
-    def expected()
-        return SOLUTION[self.step] - 1
-    end
-
-    def is_solved_clown(i)
-        if self.step <= 0
-            return false
-        end
-
-        for s: 0..(self.step - 1)
-            if SOLUTION[s] - 1 == i
-                return true
-            end
-        end
-
-        return false
     end
 
     def publish_wrong()
@@ -277,11 +252,26 @@ class Clowngame
             return nil
         end
 
-        self.demo_blink(i)
+        self.start_blink(i)
     end
 
     def nose_pressed(i)
         if self.state == "win"
+            return nil
+        end
+
+        if self.state != "blinking"
+            self.wrong_and_reset()
+            return nil
+        end
+
+        if self.active_clown == nil
+            self.wrong_and_reset()
+            return nil
+        end
+
+        if i != self.active_clown
+            self.wrong_and_reset()
             return nil
         end
 
@@ -291,9 +281,10 @@ class Clowngame
         end
 
         self.blink_id = self.blink_id + 1
-        self.active_clown = nil
+
         self.step = self.step + 1
         self.state = "idle"
+        self.active_clown = nil
 
         if self.step >= size(SOLUTION)
             self.win()
@@ -306,32 +297,31 @@ class Clowngame
         end
     end
 
-    def demo_blink(i)
-        self.state = "demo"
-        self.active_clown = i
+    def start_blink(i)
+        if self.active_clown != nil
+            if !self.is_solved_clown(self.active_clown)
+                self.eye_off(self.active_clown)
+            end
+        end
 
-        self.blink(
-            i,
-            DEMO_BLINKS * 2,
-            "demo"
-        )
-    end
-
-    def blink(i, count, mode)
         self.blink_id = self.blink_id + 1
+        self.state = "blinking"
+        self.active_clown = i
 
         self.show_solved()
 
         self._blink_step(
             i,
             0,
-            count,
-            mode,
+            DEMO_BLINKS * 2,
             self.blink_id
         )
+
+        self.last_status = ""
+        self.publish_status()
     end
 
-    def _blink_step(i, n, count, mode, id)
+    def _blink_step(i, n, count, id)
         if id != self.blink_id
             return nil
         end
@@ -340,7 +330,9 @@ class Clowngame
             self.eye_off(i)
             self.show_solved()
 
-            if self.state == mode
+            if self.state == "blinking" &&
+               self.active_clown == i
+
                 self.state = "idle"
                 self.active_clown = nil
                 self.read_inputs()
@@ -366,35 +358,36 @@ class Clowngame
                 i,
                 n + 1,
                 count,
-                mode,
                 id
             )
         )
     end
 
-    def show_solved()
-        if self.step <= 0
-            return nil
-        end
-
-        for s: 0..(self.step - 1)
-            self.eye_on(
-                SOLUTION[s] - 1
-            )
-        end
-    end
-
     def reset_game()
+        self.blink_id = self.blink_id + 1
+
+        if self.active_clown != nil
+            self.eye_off(self.active_clown)
+        end
+
         self.step = 0
         self.state = "idle"
         self.active_clown = nil
-        self.blink_id = self.blink_id + 1
 
         self.all_off()
         self.read_inputs()
 
         self.last_status = ""
         self.publish_status()
+    end
+
+    def force_complete()
+        self.enable = true
+        self.win()
+
+        tasmota.resp_cmnd(
+            "Clowngame force completed"
+        )
     end
 
     def win()
@@ -493,13 +486,7 @@ class Clowngame
         self.active_clown = nil
         self.blink_id = self.blink_id + 1
 
-        self.last_eye_states = [
-            "",
-            "",
-            "",
-            "",
-            ""
-        ]
+        self.last_eye_states = ["", "", "", "", ""]
 
         self.all_off()
         self.read_inputs()

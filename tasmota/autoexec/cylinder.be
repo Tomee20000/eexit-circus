@@ -595,13 +595,18 @@ class CylinderDriver
             return
         end
 
-        self._unlock_async(nil)
+        self._unlock_async(nil, true)
     end
 
-    def _unlock_async(done_cb)
+    def _unlock_async(done_cb, publish_unknown)
         self.unlocking = true
 
-        self.publish_position(UNKNOWN_POSITION)
+        if publish_unknown
+            self.publish_position(UNKNOWN_POSITION)
+        else
+            self.last_status = ""
+            self.publish_status()
+        end
 
         self._disable()
 
@@ -652,7 +657,8 @@ class CylinderDriver
         self.pending_position = 0
 
         self._unlock_async(
-            / -> self._start_home_after_unlock()
+            / -> self._start_home_after_unlock(),
+            true
         )
 
         tasmota.resp_cmnd("Unlocking before homing")
@@ -703,7 +709,8 @@ class CylinderDriver
             / -> self._set_pos_after_unlock(
                 p,
                 position
-            )
+            ),
+            false
         )
 
         tasmota.resp_cmnd(

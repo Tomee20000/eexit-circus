@@ -1,4 +1,3 @@
-import math
 import mqtt
 
 var RED = 0xFF0000
@@ -35,28 +34,33 @@ var GREEN_SOLUTION = [22,20,18]
 var BLUE_SOLUTION = [3,16,17]
 var YELLOW_SOLUTION = [9,10,23]
 
+var RED_START = [21,13,19]
+var GREEN_START = [5,6,7]
+var BLUE_START = [8,11,12]
+var YELLOW_START = [4,14,15]
+
+var MIX_SEQUENCE = [
+    7,9,7,9,8,4,3,3,1,1,
+    2,8,6,6,2,5,5,4,7,8,
+    5,4,9,6,3,2,1,4,5
+]
+
+var MIX_SEQUENCE_COUNT = 29
+var MIX_STEP_MS = 275
+var MIX_START_DELAY_MS = 300
+
 class KnifeGame
-    var strip, color_map, color_state, rnd
-    var enable, stable_cnt, last_input, triggered, sound_sent
+    var strip, color_state
+    var enable, mixing
+    var stable_cnt, last_input, triggered, sound_sent
     var solved, last_status, run_id
+    var brightness
 
     def init()
         self.strip = Leds(
             24,
             gpio.pin(gpio.WS2812, 3)
         )
-
-        self.rnd = [
-            4,5,6,7,8,11,
-            12,13,14,15,19,21
-        ]
-
-        self.color_map = [
-            18,21,22,13,19,20,
-            3,4,16,15,17,14,
-            8,9,10,11,12,23,
-            0,1,2,5,6,7
-        ]
 
         self.color_state = [
             OFF,OFF,OFF,OFF,OFF,OFF,
@@ -66,280 +70,280 @@ class KnifeGame
         ]
 
         self.enable = false
+        self.mixing = false
+
         self.stable_cnt = 0
         self.last_input = 0
         self.triggered = 0
+
         self.sound_sent = false
         self.solved = false
+
         self.last_status = ""
         self.run_id = 0
+        self.brightness = 100
 
-        self.strip.clear()
-        self.strip.show()
+        self.render_state()
+    end
 
-        math.srand(tasmota.millis())
+    def brightness_raw()
+        var value = int(
+            (self.brightness * 255) / 100
+        )
 
-        for i: 0..11
-            var j = math.rand() % 12
-            var tmp = self.rnd[i]
-
-            self.rnd[i] = self.rnd[j]
-            self.rnd[j] = tmp
+        if value < 0
+            value = 0
+        elif value > 255
+            value = 255
         end
+
+        return value
+    end
+
+    def render_state()
+        var raw = self.brightness_raw()
+
+        for i: 0..23
+            self.strip.set_pixel_color(
+                i,
+                self.color_state[i],
+                raw
+            )
+        end
+
+        self.strip.show()
+    end
+
+    def clear_state(color)
+        for i: 0..23
+            self.color_state[i] = color
+        end
+    end
+
+    def set_start_pattern()
+        self.clear_state(WHITE)
+
+        for i: 0..2
+            self.color_state[RED_START[i]] = RED
+            self.color_state[GREEN_START[i]] = GREEN
+            self.color_state[BLUE_START[i]] = BLUE
+            self.color_state[YELLOW_START[i]] = YELLOW
+        end
+
+        self.render_state()
+    end
+
+    def set_solved_pattern()
+        self.clear_state(WHITE)
+
+        for i: 0..2
+            self.color_state[RED_SOLUTION[i]] = RED
+            self.color_state[GREEN_SOLUTION[i]] = GREEN
+            self.color_state[BLUE_SOLUTION[i]] = BLUE
+            self.color_state[YELLOW_SOLUTION[i]] = YELLOW
+        end
+
+        self.render_state()
+    end
+
+    def reset_input()
+        self.stable_cnt = 0
+        self.last_input = 0
+        self.triggered = 0
     end
 
     def publish_first()
         if self.sound_sent
             return
         end
-        mqtt.publish("CKNIFEGAME", '{"data":"FIRST"}')
-        mqtt.publish("cmnd/CANIMALWHEEL/i2splay", "mp3/knife.mp3")
+
+        mqtt.publish(
+            "CKNIFEGAME",
+            '{"data":"FIRST"}'
+        )
+
+        mqtt.publish(
+            "cmnd/CANIMALWHEEL/i2splay",
+            "mp3/knife.mp3"
+        )
+
         self.sound_sent = true
     end
 
     def build_status()
-        var msg = '{"enabled":' .. (self.enable ? "true" : "false") .. ',"solved":' .. (self.solved ? "true" : "false") .. ',"first_used":' .. (self.sound_sent ? "true" : "false") .. ',"colors":['
+        var msg = '{"enabled":' ..
+            (self.enable ? "true" : "false") ..
+            ',"mixing":' ..
+            (self.mixing ? "true" : "false") ..
+            ',"solved":' ..
+            (self.solved ? "true" : "false") ..
+            ',"first_used":' ..
+            (self.sound_sent ? "true" : "false") ..
+            ',"brightness":' ..
+            self.brightness ..
+            ',"colors":['
+
         for i: 0..23
             if i > 0
                 msg = msg .. ","
             end
-            msg = msg .. '"' .. format("%06X", self.color_state[i]) .. '"'
+
+            msg = msg ..
+                '"' ..
+                format(
+                    "%06X",
+                    self.color_state[i]
+                ) ..
+                '"'
         end
+
         msg = msg .. "]}"
+
         return msg
     end
 
     def publish_status()
         var msg = self.build_status()
+
         if msg == self.last_status
             return
         end
+
         self.last_status = msg
-        mqtt.publish("CKNIFEGAME/STATUS", msg, true)
-    end
-
-    def stab(idx)
-        idx = int(idx)
-        if !self.enable || idx < 1 || idx > 9
-            tasmota.resp_cmnd("Knife game inactive or bad hole")
-            return
-        end
-        self.publish_first()
-        self.rotate(idx)
-        if self.solution_check()
-            self.game_solved()
-        end
-        self.publish_status()
-        tasmota.resp_cmnd("Virtual stab " .. idx)
-    end
-
-    def force_first()
-        self.publish_first()
-        self.publish_status()
-        tasmota.resp_cmnd("First usage forced")
-    end
-
-    def force_complete()
-        self.run_id += 1
-        self.enable = true
-        self.stable_cnt = 0
-        self.last_input = 0
-        self.triggered = 0
-        self.solved = false
-
-        self.publish_first()
-
-        # Preserve the white base used by normal random initialization.
-        for i: 0..23
-            self.set_color(i, WHITE)
-        end
-
-        for i: 0..2
-            self.set_color(RED_SOLUTION[i], RED)
-            self.set_color(GREEN_SOLUTION[i], GREEN)
-            self.set_color(BLUE_SOLUTION[i], BLUE)
-            self.set_color(YELLOW_SOLUTION[i], YELLOW)
-        end
-
-        self.strip.show()
-        self.game_solved()
-        self.publish_status()
-        tasmota.resp_cmnd("Knife game force completed")
-    end
-
-    def enable_game()
-        self.run_id += 1
-        self.enable = true
-        self.stable_cnt = 0
-        self.last_input = 0
-        self.triggered = 0
-        self.sound_sent = false
-        self.solved = false
-        self.last_status = ""
-        self.publish_status()
-
-        tasmota.resp_cmnd("Game enabled")
-    end
-
-    def disable_game()
-        self.run_id += 1
-        self.enable = false
-        self.stable_cnt = 0
-        self.last_input = 0
-        self.triggered = 0
-        self.sound_sent = false
-        self.solved = false
 
         mqtt.publish(
-            "cmnd/CANIMALWHEEL/i2sstop",
-            ""
+            "CKNIFEGAME/STATUS",
+            msg,
+            true
         )
+    end
 
-        self.strip.clear()
-        self.strip.show()
+    def set_brightness(level)
+        level = int(level)
 
-        for i: 0..23
-            self.color_state[i] = OFF
+        if level < 0
+            level = 0
+        elif level > 100
+            level = 100
         end
+
+        self.brightness = level
+
+        self.render_state()
+        self.publish_status()
+
+        tasmota.resp_cmnd(
+            "Brightness set to " ..
+            level ..
+            "%"
+        )
+    end
+
+    def init_colors()
+        self.run_id += 1
+        self.mixing = false
+        self.solved = false
+
+        self.reset_input()
+        self.set_start_pattern()
 
         self.last_status = ""
         self.publish_status()
 
-        tasmota.resp_cmnd("Game disabled, reset and leds off")
-    end
-
-    def led_off()
-        self.disable_game()
-    end
-
-    def set_color(index, color)
-        self.strip.set_pixel_color(
-            index,
-            color,
-            255
+        tasmota.resp_cmnd(
+            "Start colors initialized"
         )
-
-        self.color_state[index] = color
     end
 
-    def color_init()
-        for i: 0..5
-            self.set_color(
-                self.color_map[i],
-                RED
-            )
+    def show_solved()
+        self.run_id += 1
 
-            self.set_color(
-                self.color_map[i + 6],
-                YELLOW
-            )
+        self.enable = false
+        self.mixing = false
+        self.solved = false
+        self.sound_sent = false
 
-            self.set_color(
-                self.color_map[i + 12],
-                BLUE
-            )
+        self.reset_input()
+        self.set_solved_pattern()
 
-            self.set_color(
-                self.color_map[i + 18],
-                GREEN
-            )
-        end
-
-        self.strip.show()
+        self.last_status = ""
         self.publish_status()
 
         tasmota.resp_cmnd(
-            "Colors initialized"
+            "Solved preview shown"
         )
     end
 
-    def color_init_rnd()
-        for i: 0..23
-            self.set_color(
-                i,
-                WHITE
-            )
+    def rotate_internal(idx)
+        idx = int(idx)
+
+        if idx < 1 || idx > 9
+            return false
         end
-
-        for i: 0..2
-            self.set_color(
-                self.rnd[i],
-                RED
-            )
-
-            self.set_color(
-                self.rnd[i + 3],
-                YELLOW
-            )
-
-            self.set_color(
-                self.rnd[i + 6],
-                BLUE
-            )
-
-            self.set_color(
-                self.rnd[i + 9],
-                GREEN
-            )
-        end
-
-        self.strip.show()
-        self.publish_status()
-
-        tasmota.resp_cmnd(
-            "Colors initialized randomly"
-        )
-    end
-
-    def rotate(idx)
-        var buf = self.strip.pixels_buffer()
-        var ps = self.strip.pixel_size()
 
         var a = LED_MAP[idx][0]
         var b = LED_MAP[idx][1]
         var c = LED_MAP[idx][2]
         var d = LED_MAP[idx][3]
 
-        var ia = a * ps
-        var ib = b * ps
-        var ic = c * ps
-        var id = d * ps
+        var tmp = self.color_state[a]
 
-        var tmp = [0,0,0]
+        self.color_state[a] =
+            self.color_state[b]
 
-        for i: 0..(ps - 1)
-            tmp[i] = buf[ia + i]
+        self.color_state[b] =
+            self.color_state[c]
 
-            buf[ia + i] = buf[ib + i]
-            buf[ib + i] = buf[ic + i]
-            buf[ic + i] = buf[id + i]
-            buf[id + i] = tmp[i]
+        self.color_state[c] =
+            self.color_state[d]
+
+        self.color_state[d] = tmp
+
+        self.render_state()
+
+        return true
+    end
+
+    def rotate(idx)
+        if self.mixing
+            tasmota.resp_cmnd(
+                "Mix animation active"
+            )
+            return
         end
 
-        var color_tmp = self.color_state[a]
+        idx = int(idx)
 
-        self.color_state[a] = self.color_state[b]
-        self.color_state[b] = self.color_state[c]
-        self.color_state[c] = self.color_state[d]
-        self.color_state[d] = color_tmp
+        if !self.rotate_internal(idx)
+            tasmota.resp_cmnd(
+                "Bad hole"
+            )
+            return
+        end
 
-        self.strip.dirty()
-        self.strip.show()
+        self.publish_status()
 
         tasmota.resp_cmnd(
             "Block " ..
             idx ..
-            " rotated (reverse)."
+            " rotated"
         )
     end
 
     def delayed_rotate(idx, id)
-        if !self.enable || id != self.run_id
+        if !self.enable ||
+           self.mixing ||
+           id != self.run_id
             return
         end
 
-        self.rotate(idx)
-        self.publish_status()
+        self.rotate_internal(idx)
+
+        if self.solution_check()
+            self.game_solved()
+        else
+            self.publish_status()
+        end
     end
 
     def solution_check()
@@ -374,6 +378,7 @@ class KnifeGame
 
     def game_solved()
         self.enable = false
+        self.mixing = false
         self.solved = true
 
         mqtt.publish(
@@ -389,10 +394,199 @@ class KnifeGame
         self.publish_status()
     end
 
+    def stab(idx)
+        idx = int(idx)
+
+        if !self.enable ||
+           self.mixing ||
+           idx < 1 ||
+           idx > 9
+
+            tasmota.resp_cmnd(
+                "Knife game inactive or bad hole"
+            )
+            return
+        end
+
+        self.publish_first()
+
+        self.rotate_internal(idx)
+
+        if self.solution_check()
+            self.game_solved()
+        else
+            self.publish_status()
+        end
+
+        tasmota.resp_cmnd(
+            "Virtual stab " ..
+            idx
+        )
+    end
+
+    def force_first()
+        self.publish_first()
+        self.publish_status()
+
+        tasmota.resp_cmnd(
+            "First usage forced"
+        )
+    end
+
+    def force_complete()
+        self.run_id += 1
+
+        self.enable = true
+        self.mixing = false
+        self.solved = false
+
+        self.reset_input()
+
+        self.publish_first()
+        self.set_solved_pattern()
+        self.game_solved()
+
+        tasmota.resp_cmnd(
+            "Knife game force completed"
+        )
+    end
+
+    def enable_game()
+        self.run_id += 1
+
+        self.enable = true
+        self.mixing = false
+        self.solved = false
+        self.sound_sent = false
+
+        self.reset_input()
+        self.set_start_pattern()
+
+        self.last_status = ""
+        self.publish_status()
+
+        tasmota.resp_cmnd(
+            "Game enabled"
+        )
+    end
+
+    def disable_game()
+        self.run_id += 1
+
+        self.enable = false
+        self.mixing = false
+        self.solved = false
+        self.sound_sent = false
+
+        self.reset_input()
+
+        mqtt.publish(
+            "cmnd/CANIMALWHEEL/i2sstop",
+            ""
+        )
+
+        self.clear_state(OFF)
+        self.render_state()
+
+        self.last_status = ""
+        self.publish_status()
+
+        tasmota.resp_cmnd(
+            "Game disabled, reset and leds off"
+        )
+    end
+
+    def led_off()
+        self.disable_game()
+    end
+
+    def finish_mix(id)
+        if id != self.run_id
+            return
+        end
+
+        self.mixing = false
+        self.enable = true
+        self.solved = false
+        self.sound_sent = false
+
+        self.reset_input()
+
+        self.last_status = ""
+        self.publish_status()
+
+        print("Mix animation done")
+        print("Knife inputs enabled")
+
+        tasmota.resp_cmnd(
+            "Mix animation done, game ready"
+        )
+    end
+
+    def mix_step(step, id)
+        if id != self.run_id ||
+           !self.mixing
+            return
+        end
+
+        self.rotate_internal(
+            MIX_SEQUENCE[step]
+        )
+
+        self.publish_status()
+
+        if step + 1 <
+           MIX_SEQUENCE_COUNT
+
+            tasmota.set_timer(
+                MIX_STEP_MS,
+                / -> self.mix_step(
+                    step + 1,
+                    id
+                )
+            )
+
+            return
+        end
+
+        self.finish_mix(id)
+    end
+
+    def mix_to_start()
+        self.run_id += 1
+
+        self.enable = false
+        self.mixing = true
+        self.solved = false
+        self.sound_sent = false
+
+        self.reset_input()
+
+        self.set_solved_pattern()
+
+        self.last_status = ""
+        self.publish_status()
+
+        var id = self.run_id
+
+        tasmota.set_timer(
+            MIX_START_DELAY_MS,
+            / -> self.mix_step(
+                0,
+                id
+            )
+        )
+
+        tasmota.resp_cmnd(
+            "Mix animation started"
+        )
+    end
+
     def every_50ms()
         self.publish_status()
 
-        if !self.enable
+        if !self.enable ||
+           self.mixing
             return
         end
 
@@ -437,12 +631,17 @@ class KnifeGame
 
                 self.publish_first()
 
-                var rotate_current = current
+                var rotate_current =
+                    current
+
                 var id = self.run_id
 
                 tasmota.set_timer(
                     50,
-                    / -> self.delayed_rotate(rotate_current, id)
+                    / -> self.delayed_rotate(
+                        rotate_current,
+                        id
+                    )
                 )
             end
 
@@ -455,10 +654,6 @@ class KnifeGame
 
         if current == 0
             self.triggered = 0
-        end
-
-        if self.solution_check()
-            self.game_solved()
         end
     end
 end
@@ -476,12 +671,25 @@ tasmota.add_cmd(
 
 tasmota.add_cmd(
     "init",
-    / -> knife_game_driver.color_init()
+    / -> knife_game_driver.init_colors()
 )
 
 tasmota.add_cmd(
-    "rndinit",
-    / -> knife_game_driver.color_init_rnd()
+    "showsolved",
+    / -> knife_game_driver.show_solved()
+)
+
+tasmota.add_cmd(
+    "mix",
+    / -> knife_game_driver.mix_to_start()
+)
+
+tasmota.add_cmd(
+    "brightness",
+    /cmd, i, level ->
+        knife_game_driver.set_brightness(
+            number(level)
+        )
 )
 
 tasmota.add_cmd(
@@ -502,20 +710,36 @@ tasmota.add_cmd(
         )
 )
 
-tasmota.add_cmd("stab", /cmd, i, idx -> knife_game_driver.stab(number(idx)))
-tasmota.add_cmd("forcefirst", / -> knife_game_driver.force_first())
-tasmota.add_cmd("forcecomplete", / -> knife_game_driver.force_complete())
+tasmota.add_cmd(
+    "stab",
+    /cmd, i, idx ->
+        knife_game_driver.stab(
+            number(idx)
+        )
+)
+
+tasmota.add_cmd(
+    "forcefirst",
+    / -> knife_game_driver.force_first()
+)
+
+tasmota.add_cmd(
+    "forcecomplete",
+    / -> knife_game_driver.force_complete()
+)
 
 print("KnifeGame driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
-print("enable - game enabled")
-print("off - game disabled, reset and leds off")
-print("disable - game disabled, reset and leds off")
-print("init - initialize the colors, no WHITE")
-print("rndinit - initialize the colors, with WHITE, random order")
-print("rotate <n> - rotates the <n> block")
+print("enable - load start pattern and enable game")
+print("init - load fixed start pattern")
+print("showsolved - show solved pattern without SOLVED event")
+print("mix - solved to start animation, then enable game")
+print("brightness <0-100> - set LED brightness")
+print("off - disable game and turn LEDs off")
+print("disable - disable game and turn LEDs off")
+print("rotate <n> - rotate block <n>")
 print("stab <n> - virtual physical stab")
-print("forcefirst - force only first-use event")
-print("forcecomplete - set solved colors and SOLVED event")
+print("forcefirst - force first-use event")
+print("forcecomplete - set solved pattern and send SOLVED")
 print("--------------------------------------------------------------")
