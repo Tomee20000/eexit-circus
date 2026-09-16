@@ -11,7 +11,7 @@ switchmode0 2
 
 import mqtt
 
-var HARD_MODE = false
+var HARD_MODE = true
 
 var LED1 = 0 # C1 32
 var LED2 = 1 # I 33
@@ -485,8 +485,7 @@ class Sign
             self.toggle_led(LED4)
 
         elif id == 6
-            tasmota.set_power(LED2, false)
-            tasmota.set_power(LED5, false)
+            self.toggle_led(LED6)
         end
     end
 

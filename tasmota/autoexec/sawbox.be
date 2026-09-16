@@ -24,7 +24,7 @@ class SawBox
         self.counter = 0
         self.saw_in = false
         self.led_count = 30
-        self.count_per_led = 10
+        self.count_per_led = 3
         self.started = false
         self.finished = false
 

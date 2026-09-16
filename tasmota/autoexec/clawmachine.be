@@ -65,6 +65,7 @@ class ClawMachine
     var claw_ramp_start, homing_ramp_start
     var last_status
     var coin_ready
+    var state_enabled
 
     def pwm_pair(pin1, pin2, v1, v2)
         if v1 < 0
@@ -204,9 +205,11 @@ class ClawMachine
     def publish_status()
         var text = self.status_text()
         var msg = '{"text":"' .. text .. '","phase":' .. self.phase .. ',"enabled":' .. (self.is_coin_inserted ? "true" : "false") .. '}'
+
         if msg == self.last_status
             return
         end
+
         self.last_status = msg
         mqtt.publish("CCLAWMACHINE/STATUS", msg, true)
     end
@@ -228,6 +231,7 @@ class ClawMachine
 
         if !gpio.digital_read(COIN) &&
            self.coin_ready &&
+           self.state_enabled &&
            !self.is_coin_inserted &&
            !self.in_claw_animation
 
@@ -255,6 +259,7 @@ class ClawMachine
         self.homing_ramp_start = 0
         self.last_status = ""
         self.coin_ready = gpio.digital_read(COIN)
+        self.state_enabled = false
 
         self.all_motors_stop()
         self.claw_relay_off()
@@ -270,9 +275,15 @@ class ClawMachine
         tasmota.resp_cmnd("Game enabled")
     end
 
+    def state_enable()
+        self.state_enabled = true
+        tasmota.resp_cmnd("State enable armed")
+    end
+
     def disable_game()
         self.is_coin_inserted = false
         self.coin_ready = false
+        self.state_enabled = false
         self.start_disable_homing()
         self.last_status = ""
         self.publish_status()
@@ -969,6 +980,7 @@ var claw_machine_driver = ClawMachine()
 tasmota.add_driver(claw_machine_driver)
 
 tasmota.add_cmd("enable", / -> claw_machine_driver.enable_game())
+tasmota.add_cmd("stateenable", / -> claw_machine_driver.state_enable())
 tasmota.add_cmd("disable", / -> claw_machine_driver.disable_game())
 tasmota.add_cmd("clawdown", / -> claw_machine_driver.claw_down_cmd())
 tasmota.add_cmd("clawup", / -> claw_machine_driver.claw_up_cmd())
@@ -977,8 +989,9 @@ tasmota.add_cmd("fullcycle", / -> claw_machine_driver.fullcycle_cmd())
 print("ClawMachine driver loaded")
 print("--------------------------------------------------------------")
 print("Commands:")
-print("enable - game enabled")
-print("disable - disable, open claw and home every axis")
+print("enable - force game enabled")
+print("stateenable - allow coin to enable game")
+print("disable - disable, reset state permission, open claw and home every axis")
 print("clawdown - claw down full speed")
 print("clawup - claw up full speed")
 print("fullcycle - homing, down, full up")
