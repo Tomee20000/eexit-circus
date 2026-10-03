@@ -13,7 +13,7 @@ var RELAY = 0
 var HOME_SENSOR = 23
 var HOME_ACTIVE = 0
 
-var MAINTENANCE_MS = 20250
+var MAINTENANCE_MS = 20750
 var MAINTENANCE_TIMER = "carousel_maintenance"
 
 var SAFETY_DISTANCE_CM = 70
