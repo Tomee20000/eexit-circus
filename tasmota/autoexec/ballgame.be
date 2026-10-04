@@ -56,6 +56,7 @@ var all_lists = [
 ]
 
 class BallGame
+
     var topic
     var switch_state
 
@@ -79,6 +80,7 @@ class BallGame
     var blink_step
     var blink_last_time
     var blink_max_step
+
     var last_status
     var enabled
 
@@ -266,12 +268,16 @@ class BallGame
 
         if self.blink_step == 1
             tasmota.set_power(self.blink_power, false)
+
         elif self.blink_step == 2
             tasmota.set_power(self.blink_power, true)
+
         elif self.blink_step == 3
             tasmota.set_power(self.blink_power, false)
+
         elif self.blink_step == 4
             tasmota.set_power(self.blink_power, true)
+
         elif self.blink_step == 5
             tasmota.set_power(self.blink_power, false)
         end
@@ -477,11 +483,13 @@ class BallGame
         self.read_serial()
 
         if self.pn532_state == 0
+
             if tasmota.millis() - self.pn532_start_time >= 200
                 self.send_sam_config()
             end
 
         elif self.pn532_state == 1
+
             if !self.parse_sam_response()
                 if tasmota.millis() - self.pn532_start_time > 1000
                     print("PN532 initialization retry")
@@ -490,6 +498,7 @@ class BallGame
             end
 
         elif self.pn532_state == 2
+
             if !self.parse_card_response()
                 if tasmota.millis() - self.pn532_start_time >
                    PN532_RESPONSE_TIMEOUT
@@ -505,6 +514,7 @@ class BallGame
 
         if state != self.switch_state
             self.switch_state = state
+
             self.publish_switch(state)
 
             if state == 0
@@ -521,6 +531,7 @@ class BallGame
 
     def init()
         self.topic = tasmota.cmd("Topic")["Topic"]
+
         self.switch_state = gpio.digital_read(SWITCH_PIN)
         self.enabled = true
 
@@ -560,6 +571,7 @@ class BallGame
         )
 
         mqtt.publish(self.topic .. "/BALL", "-", true)
+
         self.publish_switch(self.switch_state)
 
         self.last_status = ""
@@ -572,8 +584,6 @@ class BallGame
 end
 
 var ball_game_driver = BallGame()
-
-tasmota.add_driver(ball_game_driver)
 
 tasmota.add_cmd(
     "enable",
