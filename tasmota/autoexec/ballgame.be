@@ -13,23 +13,7 @@ var PN532_BAUD = 115200
 var NO_CARD_TIMEOUT = 1000
 var PN532_RESPONSE_TIMEOUT = 300
 var BLINK_INTERVAL = 250
-
-#-régi labda
-var uid_list1 = ["04175341BE2A81","0446D14FBD2A81","0479F94FBD2A81","04DDE34FBD2A81","04BC1240BE2A81","04EF2340BE2A81","0454EB4FBD2A81","04C9F44FBD2A81","04153840BE2A81","0465EE4FBD2A81","04C15541BE2A81","0473EE4FBD2A81","04A53340BE2A81","0429DE4FBD2A81","044F2940BE2A81","044DD44FBD2A81","0427DE4FBD2A81","04661C40BE2A81","047DDA4FBD2A81","04E1E34FBD2A81","0413E84FBD2A81","046ACD4FBD2A81"]
-var uid_list2 = ["04CF6440BE2A81","04114B40BE2A81","04434540BE2A81","04155640BE2A81","04EF5B40BE2A81","04B73C40BE2A81","046B2240BE2A81","04741C40BE2A81","0499F34FBD2A81","04C12E40BE2A81","046B2240BE0704","04D81340BE2A81","042BFE4FBD2A81","04FEE74FBD2A81","0449F84FBD2A81","04F4CF4FBD2A81","04AE2740BE2A81","0433EC4FBD2A81","0412D74FBD2A81","04DCD34FBD2A81","042ADB4FBD2A81","04FBE24FBD2A81","043A3540BE2A81"]
-var uid_list3 = ["042F7640BE2A81","0471F740BE2A81","047B7B40BE2A81","04B25941BE2A81","04559440BE2A81","04D68240BE2A81","04EA8840BE2A81","0495BC40BE2A81","0496B640BE2A81","04699A40BE2A81","0467A340BE2A81","04ACAD40BE2A81","045ACB40BE2A81","04B7C240BE2A81","04ADD940BE2A81","0466E440BE2A81","042ED240BE2A81","041EF240BE2A81","04F2E940BE2A81","04481141BE2A81"]
-var uid_list4 = ["04B5B440BE2A81","043EC740BE2A81","0419CD40BE2A81","04B6BA40BE2A81","04C3C240BE2A81","047EA940BE2A81","04CE5E41BE2A81","04F2F540BE2A81","0449D44FBD2A81","04DE1841BE2A81","046A1241BE2A81","04ABDD40BE2A81","04A11D41BE2A81","04A52441BE2A81","049CEB40BE2A81","04B5FC40BE2A81","044CD14FBD2A81","04E8D740BE2A81","04493741BE2A81","04442941BE2A81","04243241BE2A81","0464CD4FBD2A81"]
-var uid_list5 = ["043316AE7E2681","04972FAE7E2681","04E435AE7E2681","04AA22AE7E2681","04C128AE7E2681","04B93CAE7E2681","04C643AE7E2681","04C143AE7E2681","04E93BAE7E2681","04811BAE7E2681","047123AE7E2681","04D22EAE7E2681","04DF35AE7E2681","0438F9AD7E2681","046C15AE7E2681","04A822AE7E2681","048D1BAE7E2681","0418FFAD7E2681","048F29AE7E2681","049B2FAE7E2681","04FD48AE7E2681","041343AE7E2681","04F73BAE7E2681","04FE42AE7E2681"]
-var uid_list6 = ["04821BAE7E2681","04471CAE7E2681","042C16AE7E2681","045DFEAD7E2681","04AC36AE7E2681","047723AE7E2681","04D42EAE7E2681","04CB28AE7E2681","04629A40BE2A81","04DD8240BE2A81","041F7640BE2A81","04747B40BE2A81","04F48840BE2A81","044B9440BE2A81","046EA340BE2A81","04146F40BE2A81","041B4F40BE2A81","04F65540BE2A81","04D55D40BE2A81","04D96440BE2A81","043E4540BE2A81","04813E40BE2A81"]
-
-új labda
-var uid_list1 = ['537B75FE130001', '53116FFE130001', '53816AFE130001', '533C63FE130001', '530C5FFE130001', '53A759FE130001', '53DA55FE130001', '53C34FFE130001', '53644CFE130001', '536048FE130001', '539445FE130001', '532741FE130001', '531A3FFE130001', '532941FE130001', '539543FE130001', '5338F70C140001', '532CF30C140001', '5325F00C140001', '5304EB0C140001', '53C2EA0C140001', '5358ED0C140001', '53ACF00C140001', '53D0F30C140001', '53F3F90C140001', '539EFD0C140001', '5363020D140001', '536E060D140001', '53A60A0D140001', '5341120D140001']
-var uid_list2 = ['532346FF130001', '533C3CFF130001', '533F35FF130001', '53292AFF130001', '534723FF130001', '539C19FF130001', '53CB12FF130001', '53F907FF130001', '534001FF130001', '53E7F7FE130001', '53DAF2FE130001', '5317EAFE130001', '53A1E3FE130001', '53C9DAFE130001', '5387D4FE130001', '53AECAFE130001', '53DEC4FE130001', '53B8BCFE130001', '530FB7FE130001', '5316AEFE130001', '5372A8FE130001', '538CA0FE130001', '53FE9AFE130001', '530892FE130001', '53A18CFE130001', '535785FE130001', '538380FE130001', '535C7AFE130001']
-var uid_list3 = ['53CF160D140001', '53EB1C0D140001', '53CE210D140001', '53801B0D140001', '53D3160D140001', '53030F0D140001', '53A80A0D140001', '5363010D140001', '53A0FD0C140001', '532BF70C140001', '53D6F30C140001', '5328F00C140001', '535AED0C140001', '53C8EA0C140001', '5356ED0C140001', '53A2F00C140001', '53CAF30C140001', '53F9F90C140001', '539CFD0C140001', '5365020D140001', '536C060D140001', '53A40A0D140001', '5343120D140001', '53CD160D140001', '53ED1C0D140001', '53C4210D140001', '537E1B0D140001', '53D9160D140001']
-var uid_list4 = ['53F6DC00140001', '530EE400140001', '53E1E800140001', '5363F000140001', '53E9F400140001', '534BF900140001', '5354FD00140001', '53DA0001140001', '539F0A01140001', '534C1901140001', '53A81701140001', '53280F01140001', '533E1201140001', '53DF1601140001', '53151501140001', '53331101140001', '53010E01140001', '53660801140001', '53B90401140001', '534BFF00140001', '5352FC00140001', '5348F900140001', '5335F200140001', '53A1ED00140001', '53EBE600140001', '53FEE100140001', '53FCD900140001', '53DAD400140001', '534CCD00140001']
-var uid_list5 = ['53010F0D140001', '539E0A0D140001', '5368060D140001', '536D010D140001', '53A2FD0C140001', '5329F70C140001', '53CCF30C140001', '535A610F140001', '53B7690F140001', '53316F0F140001', '536A770F140001', '53AA7C0F140001', '5353840F140001', '534E890F140001', '53BE900F140001', '5373950F140001', '533C9C0F140001', '5398A00F140001', '53369C0F140001', '53B4970F140001', '53BA900F140001', '53E38B0F140001', '534F840F140001', '53337F0F140001', '5366770F140001', '5303720F140001', '53B3690F140001', '531F640F140001', '53BA5B0F140001']
-var uid_list6 = ['530B0701140001', '53E1C700140001', '531ABF00140001', '5388B900140001', '53E6B300140001', '53FFAB00140001', '5369A600140001', '534F9D00140001', '53939700140001', '53A29100140001', '53108C00140001', '53318200140001', '53CE7B00140001', '53847200140001', '53F26B00140001', '53986100140001', '53EF5A00140001', '533F5100140001', '53804A00140001', '53D33F00140001', '53FC3800140001', '535580FF130001', '537C7BFF130001', '53BD70FF130001', '539E69FF130001', '53895FFF130001', '537358FF130001', '532B4DFF130001']
--#
+var BALL_READ_TIMEOUT = 2000
 
 var uid_list1 = [
     "04175341BE2A81","0446D14FBD2A81","0479F94FBD2A81","04DDE34FBD2A81","04BC1240BE2A81","04EF2340BE2A81","0454EB4FBD2A81","04C9F44FBD2A81","04153840BE2A81","0465EE4FBD2A81","04C15541BE2A81","0473EE4FBD2A81","04A53340BE2A81","0429DE4FBD2A81","044F2940BE2A81","044DD44FBD2A81","0427DE4FBD2A81","04661C40BE2A81","047DDA4FBD2A81","04E1E34FBD2A81","0413E84FBD2A81","046ACD4FBD2A81",
@@ -48,8 +32,8 @@ var uid_list3 = [
 
 var uid_list4 = [
     "04B5B440BE2A81","043EC740BE2A81","0419CD40BE2A81","04B6BA40BE2A81","04C3C240BE2A81","047EA940BE2A81","04CE5E41BE2A81","04F2F540BE2A81","0449D44FBD2A81","04DE1841BE2A81","046A1241BE2A81","04ABDD40BE2A81","04A11D41BE2A81","04A52441BE2A81","049CEB40BE2A81","04B5FC40BE2A81","044CD14FBD2A81","04E8D740BE2A81","04493741BE2A81","04442941BE2A81","04243241BE2A81","0464CD4FBD2A81",
-    "53F6DC00140001","530EE400140001","53E1E800140001","5363F000140001","53E9F400140001","534BF900140001","5354FD00140001","53DA0001140001","539F0A01140001","534C1901140001","53A81701140001","53280F01140001","533E1201140001","53DF1601140001","53151501140001","53331101140001","53010E01140001","53660801140001","53B90401140001","534BFF00140001","5352FC00140001","5348F900140001","5335F200140001","53A1ED00140001","53EBE600140001","53FEE100140001","53FCD900140001","53DAD400140001","534CCD00140001"
-    '53947303140001', '533D6D03140001', '53BE6303140001', '53405D03140001', '53245303140001', '53844C03140001', '539B4203140001', '53DC3B03140001', '53153503140001', '53A52A03140001', '53BE2303140001', '537E1903140001', '538B1203140001', '53E70703140001', '53DF0003140001', '5316F902140001', '530BF602140001', '5312F602140001', '5319F602140001', '5320F602140001', '5379F202140001', '53F7E702140001', '531EDD02140001', '53FDD502140001', '535ECB02140001', '5333C402140001', '5340B902140001', '530CB202140001', '5361A702140001'
+    "53F6DC00140001","530EE400140001","53E1E800140001","5363F000140001","53E9F400140001","534BF900140001","5354FD00140001","53DA0001140001","539F0A01140001","534C1901140001","53A81701140001","53280F01140001","533E1201140001","53DF1601140001","53151501140001","53331101140001","53010E01140001","53660801140001","53B90401140001","534BFF00140001","5352FC00140001","5348F900140001","5335F200140001","53A1ED00140001","53EBE600140001","53FEE100140001","53FCD900140001","53DAD400140001","534CCD00140001",
+    "53947303140001","533D6D03140001","53BE6303140001","53405D03140001","53245303140001","53844C03140001","539B4203140001","53DC3B03140001","53153503140001","53A52A03140001","53BE2303140001","537E1903140001","538B1203140001","53E70703140001","53DF0003140001","5316F902140001","530BF602140001","5312F602140001","5319F602140001","5320F602140001","5379F202140001","53F7E702140001","531EDD02140001","53FDD502140001","535ECB02140001","5333C402140001","5340B902140001","530CB202140001","5361A702140001"
 ]
 
 var uid_list5 = [
@@ -61,7 +45,6 @@ var uid_list6 = [
     "04821BAE7E2681","04471CAE7E2681","042C16AE7E2681","045DFEAD7E2681","04AC36AE7E2681","047723AE7E2681","04D42EAE7E2681","04CB28AE7E2681","04629A40BE2A81","04DD8240BE2A81","041F7640BE2A81","04747B40BE2A81","04F48840BE2A81","044B9440BE2A81","046EA340BE2A81","04146F40BE2A81","041B4F40BE2A81","04F65540BE2A81","04D55D40BE2A81","04D96440BE2A81","043E4540BE2A81","04813E40BE2A81",
     "530B0701140001","53E1C700140001","531ABF00140001","5388B900140001","53E6B300140001","53FFAB00140001","5369A600140001","534F9D00140001","53939700140001","53A29100140001","53108C00140001","53318200140001","53CE7B00140001","53847200140001","53F26B00140001","53986100140001","53EF5A00140001","533F5100140001","53804A00140001","53D33F00140001","53FC3800140001","535580FF130001","537C7BFF130001","53BD70FF130001","539E69FF130001","53895FFF130001","537358FF130001","532B4DFF130001"
 ]
-
 
 var all_lists = [
     uid_list1,
@@ -85,6 +68,11 @@ class BallGame
     var card_present
     var timeout_sent
     var current_ball
+    var ball_published
+
+    var read_window_active
+    var read_window_start
+    var read_window_sent
 
     var blink_active
     var blink_power
@@ -96,6 +84,7 @@ class BallGame
 
     def build_status()
         var indicator = "off"
+
         if self.blink_active
             if self.blink_power == RED_LED
                 indicator = "red"
@@ -103,15 +92,27 @@ class BallGame
                 indicator = "green"
             end
         end
+
         var switch_on = self.switch_state == 0
-        return '{"tube":"' .. self.topic .. '","enabled":' .. (self.enabled ? "true" : "false") .. ',"ball":"' .. self.current_ball .. '","present":' .. (self.card_present ? "true" : "false") .. ',"switch":' .. (switch_on ? "true" : "false") .. ',"indicator":"' .. indicator .. '","blink_active":' .. (self.blink_active ? "true" : "false") .. ',"blink_step":' .. self.blink_step .. ',"blink_total":' .. self.blink_max_step .. '}'
+
+        return '{"tube":"' .. self.topic ..
+               '","enabled":' .. (self.enabled ? "true" : "false") ..
+               ',"ball":"' .. self.current_ball ..
+               '","present":' .. (self.card_present ? "true" : "false") ..
+               ',"switch":' .. (switch_on ? "true" : "false") ..
+               ',"indicator":"' .. indicator ..
+               '","blink_active":' .. (self.blink_active ? "true" : "false") ..
+               ',"blink_step":' .. self.blink_step ..
+               ',"blink_total":' .. self.blink_max_step .. '}'
     end
 
     def publish_status()
         var msg = self.build_status()
+
         if msg == self.last_status
             return
         end
+
         self.last_status = msg
         mqtt.publish(self.topic .. "/STATUS", msg, true)
     end
@@ -132,31 +133,77 @@ class BallGame
         return out
     end
 
+    def start_read_window()
+        if !self.enabled
+            return
+        end
+
+        self.read_window_active = true
+        self.read_window_start = tasmota.millis()
+        self.read_window_sent = false
+
+        print("Ball detected, NFC window started")
+    end
+
+    def check_read_window()
+        if !self.read_window_active
+            return
+        end
+
+        if tasmota.millis() - self.read_window_start >= BALL_READ_TIMEOUT
+            self.read_window_active = false
+
+            if !self.read_window_sent
+                print("NFC window expired without valid ball")
+            else
+                print("NFC window closed")
+            end
+        end
+    end
+
     def card_read(uid)
         if !self.enabled
             return
         end
 
-        self.last_read_time = tasmota.millis()
+        var now = tasmota.millis()
+
+        self.last_read_time = now
         self.card_present = true
         self.timeout_sent = false
 
         var ball = self.find_ball(uid)
 
+        if ball == "NOT FOUND"
+            return
+        end
+
         if ball != self.current_ball
             self.current_ball = ball
-
+            self.last_status = ""
             print("UID: " .. uid .. " -> " .. ball)
+        end
+
+        if self.read_window_active &&
+           !self.read_window_sent &&
+           now - self.read_window_start < BALL_READ_TIMEOUT
+
             mqtt.publish(self.topic .. "/BALL", ball, true)
+
+            self.read_window_sent = true
+            self.ball_published = true
+
+            print("Ball published: " .. ball)
         end
     end
 
     def clear_ball()
-        if self.current_ball != "-"
+        if self.ball_published
             mqtt.publish(self.topic .. "/BALL", "-", true)
         end
 
         self.current_ball = "-"
+        self.ball_published = false
         self.last_status = ""
         self.card_present = false
         self.timeout_sent = true
@@ -219,16 +266,12 @@ class BallGame
 
         if self.blink_step == 1
             tasmota.set_power(self.blink_power, false)
-
         elif self.blink_step == 2
             tasmota.set_power(self.blink_power, true)
-
         elif self.blink_step == 3
             tasmota.set_power(self.blink_power, false)
-
         elif self.blink_step == 4
             tasmota.set_power(self.blink_power, true)
-
         elif self.blink_step == 5
             tasmota.set_power(self.blink_power, false)
         end
@@ -252,9 +295,15 @@ class BallGame
         tasmota.set_power(GREEN_LED, false)
 
         self.current_ball = "-"
+        self.ball_published = false
         self.card_present = false
         self.timeout_sent = true
         self.last_read_time = tasmota.millis()
+
+        self.read_window_active = false
+        self.read_window_start = 0
+        self.read_window_sent = false
+
         mqtt.publish(self.topic .. "/BALL", "-", true)
 
         self.switch_state = gpio.digital_read(SWITCH_PIN)
@@ -355,6 +404,7 @@ class BallGame
         while i < count - 1
             if self.rx_buffer[i] == 0xD5 &&
                self.rx_buffer[i + 1] == command
+
                 return i
             end
 
@@ -443,6 +493,7 @@ class BallGame
             if !self.parse_card_response()
                 if tasmota.millis() - self.pn532_start_time >
                    PN532_RESPONSE_TIMEOUT
+
                     self.request_card()
                 end
             end
@@ -455,8 +506,13 @@ class BallGame
         if state != self.switch_state
             self.switch_state = state
             self.publish_switch(state)
+
+            if state == 0
+                self.start_read_window()
+            end
         end
 
+        self.check_read_window()
         self.handle_pn532()
         self.check_card_timeout()
         self.handle_blink()
@@ -485,6 +541,11 @@ class BallGame
         self.card_present = false
         self.timeout_sent = true
         self.current_ball = "-"
+        self.ball_published = false
+
+        self.read_window_active = false
+        self.read_window_start = 0
+        self.read_window_sent = false
 
         self.ser = serial(
             PN532_RX,
@@ -500,6 +561,7 @@ class BallGame
 
         mqtt.publish(self.topic .. "/BALL", "-", true)
         self.publish_switch(self.switch_state)
+
         self.last_status = ""
         self.publish_status()
 
