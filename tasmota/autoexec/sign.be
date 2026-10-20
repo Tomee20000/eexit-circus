@@ -1,3 +1,4 @@
+
 #-
 var input1 = 21
 var input2 = 19
@@ -23,6 +24,7 @@ var LED_GREENRED = 6
 
 var SENSOR_HOLD_MS = 250
 var INPUT_COOLDOWN_MS = 350
+var SOLVED_HOLD_MS = 1000
 
 var RANDOM_STEP_MS = 80
 var CHASE_STEP_MS = 180
@@ -30,6 +32,7 @@ var CHASE_STEP_MS = 180
 
 class Sign
     var enabled, solved, animating
+    var solved_pending
     var phase, anim_id
     var hard_mode
 
@@ -49,6 +52,7 @@ class Sign
     def init()
         self.enabled = false
         self.solved = false
+        self.solved_pending = false
         self.animating = false
 
         self.phase = 0
@@ -142,6 +146,8 @@ class Sign
     def stop_animation_timers()
         tasmota.remove_timer("sign_random")
         tasmota.remove_timer("sign_chase")
+        tasmota.remove_timer("sign_solved")
+        self.solved_pending = false
     end
 
     def build_status()
@@ -411,30 +417,57 @@ class Sign
     end
 
     def check_solved()
-        if self.solved
+        if !self.enabled || self.solved || self.phase != 3
             return nil
         end
 
-        var p = tasmota.get_power()
-
-        if p[LED1] && p[LED2] && p[LED3] &&
-           p[LED4] && p[LED5] && p[LED6]
-
-            self.solved = true
-            self.enabled = false
-            self.animating = false
-            self.phase = 0
-
-            self.anim_id = self.anim_id + 1
-
-            self.clear_input_state()
-            self.stop_animation_timers()
-
-            mqtt.publish(self.mqtt_topic, '{"data":"SOLVED"}')
-
-            self.last_status = ""
-            self.publish_status()
+        if self.get_letters_mask() != 63
+            if self.solved_pending
+                tasmota.remove_timer("sign_solved")
+                self.solved_pending = false
+            end
+            return nil
         end
+
+        if self.solved_pending
+            return nil
+        end
+
+        self.solved_pending = true
+
+        tasmota.set_timer(
+            SOLVED_HOLD_MS,
+            / -> self.finalize_solved(),
+            "sign_solved"
+        )
+    end
+
+    def finalize_solved()
+        if !self.solved_pending
+            return nil
+        end
+
+        self.solved_pending = false
+
+        if !self.enabled || self.solved || self.phase != 3 ||
+           self.get_letters_mask() != 63
+            return nil
+        end
+
+        self.solved = true
+        self.enabled = false
+        self.animating = false
+        self.phase = 0
+
+        self.anim_id = self.anim_id + 1
+
+        self.clear_input_state()
+        self.stop_animation_timers()
+
+        mqtt.publish(self.mqtt_topic, '{"data":"SOLVED"}')
+
+        self.last_status = ""
+        self.publish_status()
     end
 
     def apply_input_normal(id)
@@ -585,6 +618,10 @@ class Sign
     end
 
     def every_250ms()
+        if self.solved_pending
+            self.check_solved()
+        end
+
         if !self.animating
             self.publish_status()
         end
