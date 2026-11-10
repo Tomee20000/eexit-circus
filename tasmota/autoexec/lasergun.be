@@ -8,13 +8,17 @@ var LED_COUNT = 6
 var LASER = 25
 var MOTOR1 = 32
 var MOTOR2 = 33
-var CONNECTED = 36
 var TRIGGER = 39
+
+var MOTOR_RECOIL = false
+var NO_RECOIL_LASER_MS = 50
+var SHOOT_GAIN = 75
 
 var STEP = 5
 var MAX_CHARGE = STEP * 5
 
 var DECAY_MS = 5000
+var TRIGGER_RELEASE_MS = 20
 
 var FORWARD1_MS = 35
 var BACK_MS = 50
@@ -26,7 +30,8 @@ var CRY_RESTART_MS = 29000
 
 class LaserGun
 
-    var enable, charge, last_msg, trigger_lock, decay, infinite
+    var enable, charge, last_msg, decay, infinite
+    var trigger_pressed, trigger_release_at
     var shot_phase, phase_start, led_update
     var cry_started, cry_loud, cry_start
     var last_status
@@ -98,9 +103,35 @@ class LaserGun
     def shoot()
         self.down(false)
 
-        self.shot_phase = 1
         self.phase_start = tasmota.millis()
-        self.motor_forward()
+
+        if MOTOR_RECOIL
+            self.shot_phase = 1
+            self.motor_forward()
+        else
+            self.shot_phase = 4
+            gpio.digital_write(MOTOR1, 0)
+            gpio.digital_write(MOTOR2, 0)
+            gpio.digital_write(LASER, 1)
+        end
+
+        tasmota.cmd("i2sgain " .. str(SHOOT_GAIN))
+        tasmota.cmd("i2splay mp3/shoot.mp3")
+
+        print("SHOT: START - charge=" .. str(self.charge))
+    end
+
+    def finish_shot()
+        self.shot_phase = 0
+        self.phase_start = 0
+        self.motor_off()
+
+        print("SHOT: COMPLETE")
+
+        if self.led_update && !self.infinite
+            self.led_update = false
+            self.leds()
+        end
     end
 
     def start_cry()
@@ -142,6 +173,7 @@ class LaserGun
 
     def build_status()
         var text = "Inaktív"
+
         if self.enable
             if self.infinite
                 text = "Aktív - végtelen lövés"
@@ -164,6 +196,7 @@ class LaserGun
 
     def publish_status()
         var msg = self.build_status()
+
         if msg == self.last_status
             return
         end
@@ -176,9 +209,13 @@ class LaserGun
         self.enable = enabled_state
         self.charge = 0
         self.last_msg = tasmota.millis()
-        self.trigger_lock = false
+
+        self.trigger_pressed = gpio.digital_read(TRIGGER) == 0
+        self.trigger_release_at = nil
+
         self.decay = true
         self.infinite = false
+
         self.shot_phase = 0
         self.phase_start = 0
         self.led_update = false
@@ -188,8 +225,14 @@ class LaserGun
 
         if self.enable
             self.leds()
+            print("GAME: ENABLED")
+
+            if self.trigger_pressed
+                print("TRIGGER: HELD - WAITING FOR RELEASE")
+            end
         else
             self.leds_off()
+            print("GAME: DISABLED")
         end
 
         self.last_status = ""
@@ -249,14 +292,16 @@ class LaserGun
             /t, idx, data, b -> self.on_mqtt_message(t, data)
         )
 
-        tasmota.add_fast_loop(/ -> self.fast_loop())
-
         self.enable = false
         self.charge = 0
         self.last_msg = tasmota.millis()
-        self.trigger_lock = false
+
+        self.trigger_pressed = false
+        self.trigger_release_at = nil
+
         self.decay = true
         self.infinite = false
+
         self.shot_phase = 0
         self.phase_start = 0
         self.led_update = false
@@ -267,6 +312,8 @@ class LaserGun
         self.last_status = ""
 
         self.reset_game(true)
+
+        tasmota.add_fast_loop(/ -> self.fast_loop())
     end
 
     def enable_game()
@@ -310,6 +357,7 @@ class LaserGun
 
     def every_50ms()
         var now = tasmota.millis()
+
         self.publish_status()
 
         if self.cry_loud &&
@@ -355,32 +403,48 @@ class LaserGun
         if self.shot_phase == 3 &&
            now - self.phase_start >= FORWARD2_MS
 
-            self.shot_phase = 0
-            self.phase_start = 0
-            self.motor_off()
+            self.finish_shot()
+        end
 
-            if self.led_update && !self.infinite
-                self.led_update = false
-                self.leds()
-            end
+        if self.shot_phase == 4 &&
+           now - self.phase_start >= NO_RECOIL_LASER_MS
+
+            self.finish_shot()
         end
 
         if !self.enable
             return
         end
 
-        if gpio.digital_read(TRIGGER)
-            self.trigger_lock = false
-        end
+        var trigger_low = gpio.digital_read(TRIGGER) == 0
 
-        if !gpio.digital_read(CONNECTED) &&
-           !gpio.digital_read(TRIGGER) &&
-           !self.trigger_lock &&
-           self.shot_phase == 0 &&
-           (self.infinite || self.charge >= STEP)
+        if trigger_low
+            self.trigger_release_at = nil
 
-            self.trigger_lock = true
-            self.shoot()
+            if !self.trigger_pressed
+                self.trigger_pressed = true
+
+                print("TRIGGER: PRESSED")
+
+                if self.shot_phase != 0
+                    print("SHOT: IGNORED - BUSY")
+                elif !self.infinite && self.charge < STEP
+                    print("SHOT: IGNORED - NO CHARGE")
+                else
+                    self.shoot()
+                end
+            end
+        else
+            if self.trigger_pressed
+                if self.trigger_release_at == nil
+                    self.trigger_release_at = now
+                elif now - self.trigger_release_at >= TRIGGER_RELEASE_MS
+                    self.trigger_pressed = false
+                    self.trigger_release_at = nil
+
+                    print("TRIGGER: RELEASED")
+                end
+            end
         end
     end
 end
