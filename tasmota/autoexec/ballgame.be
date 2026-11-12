@@ -87,6 +87,7 @@ class BallGame
 
     var last_status
     var enabled
+    var sensor_bypass
 
     def build_status()
         var indicator = "off"
@@ -103,6 +104,7 @@ class BallGame
 
         return '{"tube":"' .. self.topic ..
                '","enabled":' .. (self.enabled ? "true" : "false") ..
+               ',"sensor_bypass":' .. (self.sensor_bypass ? "true" : "false") ..
                ',"ball":"' .. self.current_ball ..
                '","present":' .. (self.card_present ? "true" : "false") ..
                ',"switch":' .. (switch_on ? "true" : "false") ..
@@ -121,6 +123,46 @@ class BallGame
 
         self.last_status = msg
         mqtt.publish(self.topic .. "/STATUS", msg, true)
+    end
+
+    def publish_sensor_bypass()
+        mqtt.publish(self.topic .. "/SENSOR_BYPASS", self.sensor_bypass ? "ON" : "OFF", true)
+    end
+
+    def set_sensor_bypass(value)
+        if value && !self.enabled
+            self.publish_sensor_bypass()
+            tasmota.resp_cmnd_error()
+            return
+        end
+
+        self.sensor_bypass = value
+        self.read_window_active = false
+        self.read_window_sent = false
+        self.publish_sensor_bypass()
+        self.last_status = ""
+        self.publish_status()
+
+        print(value ? "Sensor bypass enabled" : "Sensor bypass disabled")
+        tasmota.resp_cmnd_done()
+    end
+
+    def sensor_bypass_command(cmd, idx, payload)
+        if payload == "1" || payload == "ON" || payload == "on"
+            self.set_sensor_bypass(true)
+        elif payload == "0" || payload == "OFF" || payload == "off"
+            self.set_sensor_bypass(false)
+        elif payload == ""
+            tasmota.resp_cmnd_str(self.sensor_bypass ? "ON" : "OFF")
+        else
+            tasmota.resp_cmnd_error()
+        end
+    end
+
+    def sync_mqtt()
+        self.publish_sensor_bypass()
+        self.last_status = ""
+        self.publish_status()
     end
 
     def find_ball(uid)
@@ -144,7 +186,7 @@ class BallGame
             return
         end
 
-        if self.ball_published
+        if self.ball_published || self.sensor_bypass
             return
         end
 
@@ -224,7 +266,7 @@ class BallGame
             return
         end
 
-        if !self.read_window_active
+        if !self.sensor_bypass && !self.read_window_active
             return
         end
 
@@ -243,8 +285,8 @@ class BallGame
             self.last_status = ""
         end
 
-        if !self.read_window_sent &&
-           now - self.read_window_start < BALL_READ_TIMEOUT
+        if self.sensor_bypass ||
+           (!self.read_window_sent && now - self.read_window_start < BALL_READ_TIMEOUT)
 
             mqtt.publish(self.topic .. "/BALL", ball, true)
 
@@ -348,6 +390,7 @@ class BallGame
 
     def reset_state(enabled_state)
         self.enabled = enabled_state
+        self.sensor_bypass = false
 
         self.blink_active = false
         self.blink_power = RED_LED
@@ -369,6 +412,7 @@ class BallGame
         self.read_window_sent = false
 
         mqtt.publish(self.topic .. "/BALL", "-", true)
+        self.publish_sensor_bypass()
 
         self.switch_state = gpio.digital_read(SWITCH_PIN)
         self.publish_switch(self.switch_state)
@@ -623,6 +667,7 @@ class BallGame
 
         self.switch_state = gpio.digital_read(SWITCH_PIN)
         self.enabled = true
+        self.sensor_bypass = false
 
         self.blink_active = false
         self.blink_power = RED_LED
@@ -663,6 +708,7 @@ class BallGame
         )
 
         mqtt.publish(self.topic .. "/BALL", "-", true)
+        self.publish_sensor_bypass()
 
         self.publish_switch(self.switch_state)
 
@@ -676,6 +722,27 @@ class BallGame
 end
 
 var ball_game_driver = BallGame()
+
+tasmota.add_rule(
+    "Mqtt#Connected",
+    / -> ball_game_driver.sync_mqtt(),
+    "ballgame_bypass_sync"
+)
+
+tasmota.add_cmd(
+    "sensorbypass",
+    / cmd, idx, payload -> ball_game_driver.sensor_bypass_command(cmd, idx, payload)
+)
+
+tasmota.add_cmd(
+    "sensoroff",
+    / -> ball_game_driver.set_sensor_bypass(true)
+)
+
+tasmota.add_cmd(
+    "sensoron",
+    / -> ball_game_driver.set_sensor_bypass(false)
+)
 
 tasmota.add_cmd(
     "enable",
@@ -707,6 +774,9 @@ print("--------------------------------------------------------------")
 print("Commands:")
 print("enable - enable and reset this tube")
 print("disable - disable, clear ball and LEDs")
+print("sensorbypass 1/0 - enable/disable sensor bypass")
+print("sensoroff - read balls without the proximity sensor")
+print("sensoron - require proximity sensor to read balls")
 print("redblink - red led blink 3 times")
 print("greenblink - green led blink 3 times")
 print("solveblink - green led blink 1 time")
